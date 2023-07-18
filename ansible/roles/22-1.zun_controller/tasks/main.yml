@@ -1,0 +1,25 @@
+---
+# tasks file
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+  
+
+  - name: Edit the /etc/zun/api-paste.ini file 
+    template:
+      src: api-paste.ini.j2
+      dest: /etc/zun/api-paste.ini
+      owner: root 
+      group: zun
+      mode: '0640'      
+  
+  - name: Enable and start zun-api and zun-wsproxy
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+      daemon_reload: yes
+    with_items:
+      - zun-api
+      - zun-wsproxy

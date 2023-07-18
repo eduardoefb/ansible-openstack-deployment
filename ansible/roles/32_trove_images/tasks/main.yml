@@ -1,0 +1,170 @@
+---
+# tasks file
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Delete dir
+    file:
+      path:  "{{ item }}" 
+      state: absent
+    loop:
+      - /home/cloud/trove   
+      - /home/cloud/images
+
+
+  - name: Clone repository
+    git:
+      repo: "https://opendev.org/openstack/trove.git"            
+      dest: "/home/cloud/trove"      
+      version: "stable/{{ openstack.release }}"
+
+
+  #- name: Build image
+  #  shell: |      
+  #    cd /home/cloud/trove/integration/scripts
+  #    ./trovestack build-image ubuntu bionic false ubuntu 
+  #  args:
+  #    executable: /bin/bash
+
+  #- name: Download the image
+  #  get_url:
+  #    url: https://tarballs.opendev.org/openstack/trove/images/trove-master-guest-ubuntu-focal.qcow2
+  #    dest: /home/cloud/trove.qcow2
+  #    mode: '0644'
+  #    owner: cloud
+  #    group: cloud
+
+  #- name: Upload the image
+  #  shell: |
+  #    cd /home/cloud/
+  #    source /home/cloud/admin-openrc             
+  #    openstack image create trove-guest-ubuntu-bionic \
+  #      --public \
+  #      --disk-format qcow2 \
+  #      --container-format bare \
+  #      --tag trove --tag mysql \
+  #      --file /home/cloud/trove.qcow2
+  #  args:
+  #    executable: /bin/bash
+        
+  - name: Get image id
+    shell: |
+      cd /home/cloud/
+      source /home/cloud/admin-openrc   
+       if openstack image list | grep trove-guest-ubuntu-bionic >/dev/null 2>&1  ; then  
+        openstack image show  trove-guest-ubuntu-bionic -f value -c id      
+      fi
+    register: img_id
+    args:
+      executable: /bin/bash   
+
+  - name: Create datastore script
+    template:
+      src: db-script.sh.j2
+      dest: /home/cloud/db-script.sh
+    vars:
+      db_list: 
+        - mysql
+        - mariadb
+        - postgresql
+
+      db_versions: 
+        - { db: mysql, version: 5.7.29 }
+        - { db: mariadb, version: 10.2 }
+        - { db: mariadb, version: 10.3 }
+        - { db: postgresql, version: 10 }
+        - { db: postgresql, version: 12 }
+
+
+  - name: Exec db script
+    shell: |
+       bash /home/cloud/db-script.sh
+    args:
+      executable: /bin/bash
+
+  - name: Create datastore
+    shell: |
+      source /home/cloud/admin-openrc   
+      if openstack image list | grep trove-guest-ubuntu-bionic  ; then  
+        sudo trove-manage datastore_update {{ item }} ""
+      fi
+    args:
+      executable: /bin/bash
+    loop:
+      - mysql
+      - mariadb
+      - postgresql
+
+  - name: datastore_version_update
+    shell: |
+      source /home/cloud/admin-openrc   
+      if openstack image list | grep trove-guest-ubuntu-bionic  ; then         
+        sudo trove-manage datastore_version_update {{ item.db }} {{ item.version }} mysql {{ img_id.stdout }} {{ item.db }} 1    
+      fi
+    args:
+      executable: /bin/bash
+    loop:
+      - { db: mysql, version: 5.7.29 }
+      - { db: mariadb, version: 10.2 }
+      - { db: mariadb, version: 10.3 }
+      - { db: postgresql, version: 10 }
+      - { db: postgresql, version: 12 }
+
+  - name: db_load_datastore_config_parameters 
+    shell: |
+      source /home/cloud/admin-openrc   
+      if openstack image list | grep trove-guest-ubuntu-bionic  ; then                  
+        echo "sudo trove-manage db_load_datastore_config_parameters {{ item.db }} {{ item.version }} /usr/lib/python3/dist-packages/trove/templates/{{ item.db }}/validation-rules.json"  >> /tmp/commands.log
+      fi
+    args:
+      executable: /bin/bash
+    loop:
+      - { db: mysql, version: 5.7.29 }
+      - { db: mariadb, version: 10.2 }
+      - { db: mariadb, version: 10.3 }
+      - { db: postgresql, version: 10 }
+      - { db: postgresql, version: 12 }
+
+
+  - name: db_load_datastore_config_parameters 
+    shell: |
+      source /home/cloud/admin-openrc   
+      if openstack image list | grep trove-guest-ubuntu-bionic  ; then          
+        sudo trove-manage datastore_update {{ item.db }} ""
+        sudo trove-manage datastore_version_update {{ item.db }} {{ item.version }} {{ item.db }} {{ img_id.stdout }} {{ item.db }} 1  
+        sudo trove-manage db_load_datastore_config_parameters {{ item.db }} {{ item.version }} /usr/lib/python3/dist-packages/trove/templates/{{ item.db }}/validation-rules.json  
+      fi
+    args:
+      executable: /bin/bash
+    loop:
+      - { db: mysql, version: 5.7.29 }
+      - { db: mariadb, version: 10.2 }
+      - { db: mariadb, version: 10.3 }
+      - { db: postgresql, version: 10 }
+      - { db: postgresql, version: 12 }  
+
+  - name: Create datastore
+    shell: |
+      source /home/cloud/admin-openrc   
+      if openstack image list | grep trove-guest-ubuntu-bionic  ; then  
+        sudo trove-manage datastore_update mysql ""
+        sudo trove-manage datastore_update mariadb ""
+        sudo trove-manage datastore_update postgresql ""
+        sudo trove-manage datastore_version_update mysql 5.7.29 mysql {{ img_id.stdout }} mysql 1    
+        sudo trove-manage datastore_version_update mariadb 10.2 mariadb {{ img_id.stdout }} mariadb 1
+        sudo trove-manage datastore_version_update mariadb 10.3 mariadb {{ img_id.stdout }} mariadb 1
+        sudo trove-manage datastore_version_update postgresql 10 postgresql {{ img_id.stdout }} postgresql 1
+        sudo trove-manage datastore_version_update postgresql 12 postgresql {{ img_id.stdout }} postgresql 1
+        sudo trove-manage db_load_datastore_config_parameters mysql 5.7.29 /usr/lib/python3/dist-packages/trove/templates/mysql/validation-rules.json
+        sudo trove-manage db_load_datastore_config_parameters mariadb 10.2 /usr/lib/python3/dist-packages/trove/templates/mariadb/validation-rules.json
+        sudo trove-manage db_load_datastore_config_parameters mariadb 10.3 /usr/lib/python3/dist-packages/trove/templates/mariadb/validation-rules.json
+        sudo trove-manage db_load_datastore_config_parameters postgresql 10 /usr/lib/python3/dist-packages/trove/templates/postgresql/validation-rules.json
+        sudo trove-manage db_load_datastore_config_parameters postgresql 12 /usr/lib/python3/dist-packages/trove/templates/postgresql/validation-rules.json
+      fi
+    args:
+      executable: /bin/bash
+
+
+

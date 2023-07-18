@@ -1,0 +1,108 @@
+---
+# tasks file
+# https://docs.openstack.org/swift/wallaby/install/controller-install.html
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Create the base account.builder file
+    shell: |
+      cd /etc/swift
+      # swift-ring-builder account.builder create 10 3 1   
+      swift-ring-builder account.builder create 10 1 1 
+    args: 
+      executable: /bin/bash   
+
+  - name: Add each storage node to the ring
+    shell: |      
+      if [[ "{{ item.roles }}" = *"'storage'"*  ]]; then
+        cd /etc/swift
+        swift-ring-builder account.builder add --region 1 --zone 1 --ip {{ item.oam_ip }} --port 6202 --device {{ openstack.swift.volume_device }} --weight 100
+      fi
+
+    args: 
+      executable: /bin/bash    
+    loop:
+      "{{ nodes }}"  
+ 
+  - name: Rebalance the ring
+    shell: |
+      cd /etc/swift
+      swift-ring-builder account.builder
+      swift-ring-builder account.builder rebalance
+    args: 
+      executable: /bin/bash 
+
+  - name: Create the base container.builder file
+    shell: |
+      cd /etc/swift      
+      swift-ring-builder container.builder create 10 1 1 
+    args: 
+      executable: /bin/bash   
+
+  - name: Add each storage node to the ring
+    shell: |      
+      if [[ "{{ item.roles }}" = *"'storage'"*  ]]; then
+        cd /etc/swift        
+        swift-ring-builder container.builder add --region 1 --zone 1 --ip {{ item.oam_ip }} --port 6201 --device  {{ openstack.swift.volume_device }} --weight 100        
+      fi
+
+    args: 
+      executable: /bin/bash    
+    loop:
+      "{{ nodes }}"  
+ 
+  - name: Rebalance the ring
+    shell: |
+      cd /etc/swift
+      swift-ring-builder container.builder
+      swift-ring-builder container.builder rebalance
+    args: 
+      executable: /bin/bash 
+
+
+  - name: Create the base object.builder file
+    shell: |
+      cd /etc/swift      
+      swift-ring-builder object.builder create 10 1 1 
+    args: 
+      executable: /bin/bash   
+
+  - name: Add each storage node to the ring
+    shell: |      
+      if [[ "{{ item.roles }}" = *"'storage'"*  ]]; then
+        cd /etc/swift                
+        swift-ring-builder object.builder add --region 1 --zone 1 --ip {{ item.oam_ip }} --port 6200 --device {{ openstack.swift.volume_device }} --weight 100        
+      fi
+
+    args: 
+      executable: /bin/bash    
+    loop:
+      "{{ nodes }}"  
+ 
+  - name: Rebalance the ring
+    shell: |
+      cd /etc/swift
+      swift-ring-builder object.builder
+      swift-ring-builder object.builder rebalance
+    args: 
+      executable: /bin/bash 
+
+  - name: Get account.ring.gz
+    fetch:
+      src: /etc/swift/account.ring.gz
+      dest: /tmp/account.ring.gz
+      flat: yes
+
+  - name: Get container.ring.gz
+    fetch:
+      src: /etc/swift/container.ring.gz
+      dest: /tmp/container.ring.gz
+      flat: yes
+
+  - name: Get object.ring.gz
+    fetch:
+      src: /etc/swift/object.ring.gz
+      dest: /tmp/object.ring.gz
+      flat: yes            

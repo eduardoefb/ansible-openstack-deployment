@@ -1,0 +1,249 @@
+---
+
+  timezone: Brazil/East
+
+  install:
+     zun: "no"
+     swift: "yes"
+     octavia: "yes"
+     trove: "no"
+     magnum: "no"
+
+  images:
+    - name: debian_11
+      url: https://cloud.debian.org/images/cloud/bullseye/20230124-1270/debian-11-generic-amd64-20230124-1270.qcow2
+      type: qcow2
+
+    - name: trove-guest-ubuntu-bionic 
+      url: https://tarballs.opendev.org/openstack/trove/images/trove-master-guest-ubuntu-focal.qcow2
+      type: qcow2
+
+    - name: ubuntu_18.04
+      url: https://cloud-images.ubuntu.com/bionic/current/bionic-server-cloudimg-amd64.img
+      type: qcow2
+
+    - name: ubuntu_20.04
+      url: https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img
+      type: qcow2
+      
+    - name: ubuntu_22.04
+      url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+      type: qcow2
+
+    - name: debian_10
+      url: http://cdimage.debian.org/cdimage/openstack/current-10/debian-10-openstack-amd64.qcow2
+      type: qcow2
+
+    - name: centos_7
+      url: http://cloud.centos.org/centos/7/images/CentOS-7-x86_64-GenericCloud-2111.qcow2
+      type: qcow2      
+                  
+  network:
+    domain: openstacklab.int
+    ntp_servers:      
+      - 0.centos.pool.ntp.org
+      - 1.centos.pool.ntp.org
+      - 2.centos.pool.ntp.org
+      - 3.centos.pool.ntp.org    
+
+    oam:
+      name: claboam
+      network: 10.2.1.0
+      broadcast: 10.2.1.255
+      gateway: 10.2.1.1
+      netmask: 255.255.255.0
+      netmask_len: 24
+      dns: 1.1.1.1
+ 
+    external:
+      - name: clabext01
+        network: 10.3.0.0
+        broadcast: 10.3.0.255
+        netmask: 255.255.255.0
+        netmask_len: 24 
+
+
+  nodes:  
+    - name: srv01
+      availability_zone: zone01
+      aggregate: ag01     
+      oam_ip: "10.2.1.55"      
+      roles: 
+        - controller
+        - compute
+        - storage
+
+    - name: srv02
+      availability_zone: zone02
+      aggregate: ag02
+      oam_ip: "10.2.1.56"      
+      roles: 
+        - compute
+        - storage
+
+    - name: srv03
+      availability_zone: zone03
+      aggregate: ag03
+      oam_ip: "10.2.1.57"      
+      roles: 
+        - compute
+        - storage
+   
+  openstack:    
+    #release: zed
+    release: victoria
+    certificate_c: C=BR
+    certificate_duration: 3650
+    cert_prefix: openstack
+    services:
+        - name: glance
+          local_port: 54001
+          local_ip: 127.0.0.1
+          remote_port: 9292
+          use_nginx: true
+
+        - name: placement
+          local_port: 54003
+          local_ip: 127.0.0.1
+          remote_port: 8778   
+          use_nginx: true
+
+        - name: nova
+          local_port: 54004
+          local_ip: 127.0.0.1
+          remote_port: 8774 
+          use_nginx: true
+
+        - name: nova-vnc
+          local_port: 54104
+          local_ip: 127.0.0.1
+          remote_port: 6080 
+          use_nginx: true
+
+        - name: neutron
+          local_port: 54005
+          local_ip: 127.0.0.1
+          remote_port: 9696         
+          use_nginx: true
+
+        - name: cinder
+          local_port: 54006
+          local_ip: 127.0.0.1
+          remote_port: 8776  
+          use_nginx: true
+
+        - name: designate
+          local_port: 54010
+          local_ip: 127.0.0.1
+          remote_port: 9001 
+          use_nginx: true           
+
+        - name: swift
+          local_port: 54011
+          local_ip: 127.0.0.1
+          remote_port: 8080   
+          use_nginx: true          
+
+        - name: zun
+          local_port: 54012
+          local_ip: 127.0.0.1
+          remote_port: 9517 
+          use_nginx: true            
+
+        - name: trove
+          local_port: 54013
+          local_ip: 127.0.0.1
+          remote_port: 8779    
+          use_nginx: true           
+          
+        - name: magnum
+          local_port: 54014
+          local_ip: 127.0.0.1
+          remote_port: 9511   
+          use_nginx: true          
+          
+        - name: octavia
+          local_port: 54015
+          local_ip: 127.0.0.1
+          remote_port: 9876   
+          use_nginx: true          
+                            
+    controller:
+      ip: "10.2.1.55"
+      host: cvip
+      name: "cvip.{{ network.domain }}"
+      
+    provider_networks:
+      - name: clabext01  
+        device: eth1
+        gateway: 10.3.0.1
+        range_begin: 10.3.0.129
+        range_end: 10.3.0.254
+        network: 10.3.0.0/24
+        vlans: 50:4000
+
+    octavia_network_name: lb
+    trove_network_name: trove
+    
+    vlan_networks: 
+
+      - name: lb  
+        provider: clabext01
+        vlan: 300
+        network: 10.8.0.0/24
+        gateway: 10.8.0.1
+        mtu: 1450
+
+      - name: trove  
+        provider: clabext01
+        vlan: 301
+        network: 10.8.1.0/24
+        gateway: 10.8.1.1
+        mtu: 1450     
+
+    cinder:
+       volume_name: cinder_volumes
+       volume_device: sdb1  
+
+    swift:       
+      volume_device: sdb2
+      swift_hash_path_suffix: d96b1aa38deee72ea29f
+      swift_hash_path_prefix: 0235accdcf97c5d7e063      
+
+    flavors:
+       - name: m1.nano
+         vcpus: 1
+         ram: 64
+         disk: 1
+       - name: m1.tiny
+         vcpus: 1
+         ram: 512
+         disk: 1
+       - name: m1.small
+         vcpus: 2
+         ram: 2048
+         disk: 20       
+       - name: m1.medium
+         vcpus: 2
+         ram: 4096
+         disk: 40       
+       - name: m1.large
+         vcpus: 2
+         ram: 8192
+         disk: 80          
+       - name: m1.xlarge
+         vcpus: 4
+         ram: 16384
+         disk: 160
+       - name: m2.xlarge
+         vcpus: 8
+         ram: 16384
+         disk: 160   
+       - name: m3.xlarge
+         vcpus: 8
+         ram: 32696
+         disk: 160   
+       - name: m4.xlarge
+         vcpus: 16
+         ram: 32696
+         disk: 160                  

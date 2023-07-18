@@ -1,0 +1,184 @@
+---
+# tasks file
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+
+  - name: Delete endpoint, service and users if they exist
+    ignore_errors: yes
+    shell: |
+      source /root/admin-openrc
+      for f in `openstack endpoint list | grep magnum | awk '{print $2}'`; do openstack endpoint delete ${f}; done
+      for f in `openstack service list | grep magnum | awk '{print $2}'`; do openstack service delete ${f}; done
+      for f in `openstack user list | grep magnum | awk '{print $2}'`; do openstack user delete ${f}; done          
+      for f in `openstack domain list | grep magnum | awk '{print $2}'`; do openstack domain set ${f} --disable; done
+      for f in `openstack domain list | grep magnum | awk '{print $2}'`; do openstack domain delete ${f}; done
+    args:
+      executable: /bin/bash  
+
+
+  - name: Create database and user
+    shell: |
+      mysql -u root -p{{ ROOT_DBPASS }} -e "DROP DATABASE magnum;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "CREATE DATABASE magnum;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON magnum.* TO 'magnum'@'localhost' IDENTIFIED BY '{{ MAGNUM_DBPASS }}';"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON magnum.* TO 'magnum'@'%' IDENTIFIED BY '{{ MAGNUM_DBPASS }}';"
+
+  - name: Create magnum user
+    shell: |
+      source /root/admin-openrc
+      openstack user create --domain default --password {{ MAGNUM_PASS }} magnum     
+    args:
+      executable: /bin/bash      
+    
+  - name: Add the admin role to the magnum user
+    shell: |
+      source /root/admin-openrc
+      openstack role add --project service --user magnum admin
+    args:
+      executable: /bin/bash      
+  
+  - name: Create the magnum service entity
+    shell: |
+      source /root/admin-openrc
+      openstack service create --name magnum --description "OpenStack Container Infrastructure Management Service" container-infra
+    args:
+      executable: /bin/bash      
+
+  - name: Create the Container Infrastructure Management service API endpoints
+    shell: |
+      source /root/admin-openrc
+      openstack endpoint create --region RegionOne container-infra public https://{{ openstack.controller.ip }}:9511/v1      
+      openstack endpoint create --region RegionOne container-infra internal https://{{ openstack.controller.ip }}:9511/v1      
+      openstack endpoint create --region RegionOne container-infra admin https://{{ openstack.controller.ip }}:9511/v1
+    args:
+      executable: /bin/bash    
+
+  - name: Create the magnum domain that contains projects and users
+    shell: |
+      source /root/admin-openrc
+      openstack domain create --description "Owns users and projects created by magnum" magnum
+    args:
+      executable: /bin/bash        
+
+  - name: Create the magnum_domain_admin user to manage projects and users in the magnum domain
+    shell: |
+      source /root/admin-openrc
+      openstack user create --domain magnum --password {{ MAGNUM_ADMIN_PASS }} magnum_domain_admin 
+    args:
+      executable: /bin/bash      
+
+  - name: Add the admin role to the magnum_domain_admin user in the magnum domain to enable administrative management privileges by the magnum_domain_admin user
+    shell: |
+      source /root/admin-openrc
+      openstack role add --domain magnum --user-domain magnum --user magnum_domain_admin admin
+    args:
+      executable: /bin/bash          
+    
+  - name: Installing the packages
+    apt:
+      name: "{{ packages }}"
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success        
+    vars:
+      packages:        
+        - magnum-api
+        - magnum-conductor
+        - python3-magnumclient
+        - python3-magnum-ui
+    
+  - name: Copy ca file to /etc/magnum
+    copy:
+      src:  /root/rootCA.pem
+      dest: /etc/magnum/rootCA.pem
+      remote_src: yes 
+      owner: root 
+      group: magnum
+      mode: '0640'      
+
+
+  - name: Edit the /etc/magnum/magnum.conf  file 
+    template:
+      src: magnum.conf.j2
+      dest: /etc/magnum/magnum.conf
+      owner: root 
+      group: magnum
+      mode: '0640'
+
+  - name: Create the /etc/magnum/keystone_auth_default_policy.json  file 
+    template:
+      src: keystone_auth_default_policy.j2
+      dest: /etc/magnum/keystone_auth_default_policy.json
+      owner: root 
+      group: magnum
+      mode: '0640'      
+  
+  - name: Populate the database
+    shell: |
+      su -s /bin/sh -c "magnum-db-manage upgrade" magnum
+    args:
+      executable: /bin/bash
+
+  #- name: Copy files
+  #  shell: |
+  #    find /usr/lib/python3/dist-packages/magnum_ui/enabled/ -name "*.py"  -exec cp {} /usr/lib/python3/dist-packages/openstack_dashboard/enabled/ \;
+  #  args:
+  #    executable: /bin/bash
+
+  - name: Restart the Container Infrastructure Management services
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+      daemon_reload: yes
+    with_items:
+      - magnum-api
+      - magnum-conductor
+      - apache2
+  
+  - name: Delete images if exist
+    shell: |
+      source /root/admin-openrc
+      for i in `openstack image list | grep fedora-atomic-latest | awk '{print $2}'`; do openstack image delete ${i}; done
+      for i in `openstack image list | grep Fedora-CoreOS | awk '{print $2}'`; do openstack image delete ${i}; done
+    args:
+      executable: /bin/bash
+  
+  - name: Download fedora coreos image  
+    get_url:
+      url: https://builds.coreos.fedoraproject.org/prod/streams/stable/builds/32.20201004.3.0/x86_64/fedora-coreos-32.20201004.3.0-openstack.x86_64.qcow2.xz 
+      dest: /tmp/fedora-coreos-32.20201004.3.0-openstack.x86_64.qcow2.xz 
+      mode: '0744'
+      
+  
+  - name: Upload image
+    shell: |
+      source /root/admin-openrc
+      cd /tmp/
+      xz -dv /tmp/fedora-coreos-32.20201004.3.0-openstack.x86_64.qcow2.xz
+      openstack image create Fedora-CoreOS --file=/tmp/fedora-coreos-32.20201004.3.0-openstack.x86_64.qcow2 --disk-format=qcow2 --container-format=bare --property os_distro='fedora-coreos' --public       
+    register: img_res
+    retries: 20
+    delay: 10
+    until: img_res is success      
+    args:
+      executable: /bin/bash
+
+
+
+
+
+      
+      
+
+
+
+
+    
+
+

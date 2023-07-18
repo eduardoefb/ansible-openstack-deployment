@@ -1,0 +1,14 @@
+# Enviroment:  
+
+# Add sdb1 to var
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 92_aggregation_and_zones_controller
+
+  - hosts: storage
+    user: cloud
+    become: true
+    roles:     
+      - role: 93_aggregation_and_zones_storage

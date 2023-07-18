@@ -1,0 +1,419 @@
+# Enviroment:  
+
+# Add sdb1 to var
+
+# Passwords:
+  - hosts: localhost
+    tasks:
+      - name: Create password file
+        shell: |
+           cat << EOF > passwords.yml
+           ---
+             ROOT_DBPASS: `openssl rand -hex 20` 
+             ADMIN_PASS: `openssl rand -hex 20` 
+             CINDER_DBPASS: `openssl rand -hex 20` 
+             CINDER_PASS: `openssl rand -hex 20` 
+             DASH_DBPASS: `openssl rand -hex 20` 
+             DEMO_PASS: `openssl rand -hex 20`
+             GLANCE_DBPASS: `openssl rand -hex 20`
+             GLANCE_PASS: `openssl rand -hex 20`
+             KEYSTONE_DBPASS: `openssl rand -hex 20`
+             METADATA_SECRET: `openssl rand -hex 20`
+             NEUTRON_DBPASS: `openssl rand -hex 20`
+             NEUTRON_PASS: `openssl rand -hex 20`
+             NOVA_DBPASS: `openssl rand -hex 20`
+             NOVA_PASS: `openssl rand -hex 20`
+             PLACEMENT_PASS: `openssl rand -hex 20`
+             PLACEMENT_DBPASS: `openssl rand -hex 20`
+             RABBIT_PASS: `openssl rand -hex 20`
+             HEAT_PASS: `openssl rand -hex 20`
+             HEAT_ADMIN_DOMAIN_PASS: `openssl rand -hex 20`
+             HEAT_DBPASS: `openssl rand -hex 20`
+             ZUN_DBPASS: `openssl rand -hex 20`
+             ZUN_PASS: `openssl rand -hex 20`
+             KURYR_PASS: `openssl rand -hex 20`
+             KURYR_DBPASS: `openssl rand -hex 20`
+             MAGNUM_DBPASS: `openssl rand -hex 20`
+             MAGNUM_PASS: `openssl rand -hex 20`
+             MAGNUM_ADMIN_PASS: `openssl rand -hex 20`
+             DESIGNATE_DBPASS: `openssl rand -hex 20`
+             DESIGNATE_PASS: `openssl rand -hex 20`
+             TROVE_DBPASS: `openssl rand -hex 20`
+             TROVE_PASS: `openssl rand -hex 20`              
+             SWIFT_PASS: `openssl rand -hex 20`   
+             OCTAVIA_DBPASS: `openssl rand -hex 20`
+             OCTAVIA_PASS: `openssl rand -hex 20`
+             OCTAVIA_JOBBOARDPASS: `openssl rand -hex 20`
+           EOF
+      
+  - hosts: controller, compute, storage
+    user: cloud
+    become: true
+    roles:     
+      - role: 01_environment
+
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 01-01_nginx_and_certs
+
+
+# Get CA from controller and add as trusted to all nodes
+  - hosts: controller
+    user: cloud
+    become: true 
+    tasks:
+      - name: Get CA
+        fetch:
+          src: /etc/ssl/certs/rootCA.pem
+          dest: "{{ playbook_dir }}/rootCA.pem" 
+          flat: yes
+      
+# Transfer CA to all nodes and add to the trusted list  
+  - hosts: controller, compute, storage
+    user: cloud
+    become: true 
+    tasks:
+      - name: Create directory
+        file:
+          path: /usr/local/share/ca-certificates/extra/
+          state: directory
+      
+      - name: Transfer files
+        copy:
+          src: "{{ playbook_dir }}/rootCA.pem" 
+          dest: /usr/local/share/ca-certificates/extra/openstack_rootCA.crt
+      
+      - name: Update ca trusted list
+        shell: |
+          /usr/sbin/update-ca-certificates
+        args:
+          executable: /bin/bash
+
+# NTP controller:
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 02_ntp_controller      
+
+# NTP other nodes:
+  - hosts: compute, storage
+    user: cloud
+    become: true
+    roles:     
+      - role: 03_ntp_other_nodes  
+
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 02_ntp_controller           
+ 
+ # Enviroment packages:
+  - hosts: controller, compute, storage
+    user: cloud
+    become: true
+    roles:     
+      - role: 04_enviroment_packages  
+
+ # SQL database: 
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 05_sql_database  
+
+# Message queue
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 06_message_queue  
+
+# Memcached
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 07_memcached
+
+# Ectd
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 08_etcd    
+
+# keystone
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 09_keystone   
+
+# glance
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 10_glance 
+
+# placement
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 11_placement   
+
+# nova - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 12_nova_controller     
+
+# nova - Compute
+  - hosts: compute
+    user: cloud
+    become: true
+    roles:     
+      - role: 13_nova_compute
+
+# nova - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 14_nova_controller    
+        
+# Neutron - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 15_neutron_controller_ovn
+
+# Neutron - Compute
+  - hosts: compute
+    user: cloud
+    become: true
+    roles:     
+      - role: 16_neutron_compute_ovn
+
+# Neutron - Controller, compute
+  - hosts: controller, compute
+    user: cloud
+    become: true
+    roles:     
+      - role: 16_z_neutron_controller_compute_ovn
+
+# Disable app armor
+
+  - hosts: controller, compute, storage
+    user: cloud
+    become: true  
+    tasks:
+      - name: Disable apparmor 
+        systemd:
+          name: apparmor
+          state: stopped
+          enabled: no
+
+      - name: Reboot after apparmor disabled 
+        reboot:
+          msg: Reboot triggered
+          reboot_timeout: 360         
+
+# Cinder - Controller 
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 18_cinder_controller    
+      
+# Cinder -  Storage
+  - hosts: storage
+    user: cloud
+    become: true
+    roles:     
+      - role: 19_cinder_storage   
+
+# Create images:
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 31_images  
+
+ # Heat - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 20_heat_controller 
+        
+# Zun - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 21_zun_controller
+        when: install.zun == "yes"   
+
+# Zun - compute
+  - hosts: compute
+    user: cloud
+    become: true
+    roles:     
+      - role: 22_zun_compute
+        when: install.zun == "yes"   
+
+# Designate - controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 23_designate
+
+# Magnum - controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 24_magnum  
+        when: install.magnum == "yes"       
+
+# Dashboard - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 17_horizon      
+
+# Swift - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 25_swift_controller    
+        when: install.swift == "yes"  
+
+# Swift - Storage
+  - hosts: storage
+    user: cloud
+    become: true
+    roles:     
+      - role: 26_swift_storage  
+        when: install.swift == "yes"        
+
+ # Swift - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 27_swift_controller  
+        when: install.swift == "yes"        
+
+# Swift - Storage
+  - hosts: storage
+    user: cloud
+    become: true
+    roles:     
+      - role: 28_swift_storage  
+        when: install.swift == "yes"        
+
+ # Swift - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 29_swift_controller   
+        when: install.swift == "yes"        
+
+# Swift - Storage
+  - hosts: storage
+    serial: 1
+    user: cloud
+    become: true
+    roles:     
+      - role: 30_swift_storage  
+        when: install.swift == "yes"        
+
+# Create the network and flavors
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 90_network_and_flavors   
+           
+  - hosts: controller
+    user: cloud
+    become: true
+    tasks: 
+      - name: Copy password file to controller
+        copy:
+          src: "{{ playbook_dir }}/passwords.yml"  
+          dest: "/root/passwords.yml"
+          owner: root
+          group: root
+          mode: '0400'
+      
+      - name: Clear password file
+        file:
+          path: "{{ playbook_dir }}/passwords.yml"  
+          state: absent
+
+# Zun - Controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 22-1.zun_controller   
+        when: install.zun == "yes"
+
+# Octavia - controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 33_octavia   
+        when: install.octavia == "yes"
+
+# Trove - controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 32_trove         
+        when: install.trove == "yes"  
+
+# Trove - controller
+  - hosts: controller
+    user: cloud
+    become: false
+    roles:     
+      - role: 32_trove_images    
+        when: install.trove == "yes"     
+
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 92_aggregation_and_zones_controller
+
+  - hosts: storage
+    user: cloud
+    become: true
+    roles:     
+      - role: 93_aggregation_and_zones_storage                           
+
+  - hosts: controller, compute, storage
+    user: cloud
+    become: true 
+    tasks:
+      - name: Reboot 
+        reboot:
+          msg: Reboot triggered
+          reboot_timeout: 360          

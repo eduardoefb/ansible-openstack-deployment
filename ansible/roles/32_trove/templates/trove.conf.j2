@@ -1,0 +1,69 @@
+[DEFAULT]
+network_driver = trove.network.neutron.NeutronDriver
+management_networks = {{ trove_network_id.stdout }}
+management_security_groups = {{ sec.stdout }}
+cinder_volume_type = lvmdriver-1
+nova_keypair = trove
+default_datastore = mysql
+taskmanager_manager = trove.taskmanager.manager.Manager
+trove_api_workers = 5
+transport_url = rabbit://openstack:{{ RABBIT_PASS }}@{{ openstack.controller.name }}:5672/
+control_exchange = trove
+rpc_backend = rabbit
+reboot_time_out = 300
+usage_timeout = 900
+agent_call_high_timeout = 1200
+use_syslog = False
+debug = True
+
+{% for i in openstack.services %}
+{% if i.name == "trove" %}
+bind_port={{ i.local_port }}
+bind_ip={{ i.local_ip }}
+{% endif %}
+{% endfor %}
+
+
+[keystone_authtoken]
+auth_uri = https://{{ openstack.controller.name }}:5000/
+auth_url = https://{{ openstack.controller.name  }}:5000/
+memcached_servers = {{ openstack.controller.name }}:11211
+
+memcached_servers = {{ openstack.controller.name }}:11211
+# cafile = /devstack/stack/data/ca-bundle.pem
+project_domain_name = Default
+project_name = service
+user_domain_name = Default
+password = {{ TROVE_PASS }}
+username = trove
+auth_url = https://{{ openstack.controller.name }}:5000/
+auth_uri = https://{{ openstack.controller.name }}:5000/
+auth_type = password
+
+[service_credentials]
+auth_url = https://{{ openstack.controller.name }}:5000/
+auth_uri = https://{{ openstack.controller.name }}:5000/
+region_name = RegionOne
+project_name = service
+password = {{ TROVE_PASS }}
+project_domain_name = Default
+user_domain_name = Default
+username = trove
+
+[database]
+connection = mysql+pymysql://trove:{{ TROVE_DBPASS }}@{{ openstack.controller.name }}/trove?charset=utf8
+
+[mariadb]
+tcp_ports = 3306,4444,4567,4568
+
+[mysql]
+tcp_ports = 3306
+
+[postgresql]
+tcp_ports = 5432
+
+[oslo_messaging_amqp]
+[oslo_messaging_kafka]
+[oslo_messaging_notifications]
+[oslo_messaging_rabbit]
+[oslo_policy]

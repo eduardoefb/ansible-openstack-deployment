@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<domain type="kvm">
+  <name>srv02</name>
+  <memory unit="KiB">6144000</memory>
+  <vcpu placement="static">4</vcpu>
+  <cpu mode="host-passthrough">
+    <feature policy="require" name="vmx"/>
+  </cpu>
+  <os>
+    <type arch="x86_64" machine="pc-i440fx-2.9">hvm</type>
+    <boot dev="hd"/>
+    <boot dev="cdrom"/>
+  </os>
+  <devices>
+    <disk type="file" device="cdrom">
+      <driver name="qemu" type="raw"/>
+      <source file="/opt/qemu_disks/srv02.iso"/>
+      <target dev="hda" bus="ide"/>
+      <readonly/>
+    </disk>
+    <disk type="file" device="disk">
+      <driver name="qemu" type="raw"/>
+      <source file="/opt/qemu_disks/srv02_disk_1.img"/>
+      <target dev="sda" bus="sata"/>
+    </disk>
+    <disk type="file" device="disk">
+      <driver name="qemu" type="raw"/>
+      <source file="/opt/qemu_disks/srv02_disk_2.img"/>
+      <target dev="sdb" bus="sata"/>
+    </disk>
+    <disk type="file" device="disk">
+      <driver name="qemu" type="raw"/>
+      <source file="/opt/qemu_disks/srv02_disk_3.img"/>
+      <target dev="sdc" bus="sata"/>
+    </disk>
+    <interface type="network">
+      <mac address="52:54:00:00:00:11"/>
+      <source network="net1"/>
+      <model type="virtio"/>
+    </interface>
+    <interface type="network">
+      <mac address="52:54:00:00:01:11"/>
+      <source network="net2"/>
+      <model type="virtio"/>
+    </interface>
+    <interface type="network">
+      <mac address="52:54:00:00:02:11"/>
+      <source network="net3"/>
+      <model type="virtio"/>
+    </interface>
+    <graphics type="vnc" port="5902" autoport="no" listen="127.0.0.1">
+      <listen type="address" address="127.0.0.1"/>
+    </graphics>
+  </devices>
+</domain>

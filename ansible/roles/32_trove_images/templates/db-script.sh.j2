@@ -1,0 +1,14 @@
+  source /home/cloud/admin-openrc   
+  if openstack image list | grep trove-guest-ubuntu-bionic  ; then  
+  {% for db in db_list %}
+    sudo trove-manage datastore_update {{ db }} ""
+  {% endfor %}
+  {% for i in db_versions %}
+    sudo trove-manage datastore_version_update {{ i.db }} {{ i.version }} {{ i.db }} {{ img_id.stdout }} {{ i.db }} 1
+  {% endfor %}
+
+  {% for i in db_versions %}
+    sudo trove-manage db_load_datastore_config_parameters {{ i.db }} {{ i.version }} /usr/lib/python3/dist-packages/trove/templates/{{ i.db }}/validation-rules.json
+  {% endfor %}  
+
+  fi

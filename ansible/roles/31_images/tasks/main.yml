@@ -1,0 +1,35 @@
+---
+# tasks file
+# https://docs.openstack.org/swift/wallaby/install/storage-install-ubuntu-debian.html
+
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Get images
+    get_url:
+      url: "{{ item.url }}"
+      dest: "/tmp/{{ item.name }}.img"
+    register: img_res
+    retries: 20
+    delay: 10
+    until: img_res is success      
+    loop:
+      "{{ images }}"      
+
+
+  - name: Create images
+    shell: |
+      source /root/admin-openrc
+      openstack image create --container-format bare --disk-format {{ item.type }} --file /tmp/{{ item.name }}.img {{ item.name }} --public
+    register: img_res
+    retries: 20
+    delay: 10
+    until: img_res is success
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ images }}"
+
+

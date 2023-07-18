@@ -1,0 +1,12 @@
+# Enviroment:  
+
+# Add sdb1 to var
+
+     
+# Create the network and flavors
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 90_network_and_flavors   
+

@@ -1,0 +1,86 @@
+---
+# tasks file
+# https://docs.openstack.org/install-guide/openstack-services.html
+# https://docs.openstack.org/cinder/train/install/cinder-storage-install-rdo.html
+# https://docs.openstack.org/train/install/
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Check if node is also controller
+    shell: |
+      is_controller=0
+      if grep "connection = mysql+pymysql://nova:{{ NOVA_DBPASS }}@{{ openstack.controller.name }}/nova_api" /etc/nova/nova.conf >/dev/null 2>&1 ; then 
+        is_controller=1      
+      fi
+      echo ${is_controller}
+    register: is_controller
+    args:
+      executable: /bin/bash
+
+  - name: Installing the packages
+    apt:
+      name: "{{ packages }}"
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+    vars:
+      packages:
+        - lvm2
+        - thin-provisioning-tools
+        - cinder-volume
+        - python3-rtslib-fb
+
+
+  - name: Edit the /etc/lvm/lvm.conf file 
+    template:
+      src: lvm.conf.j2
+      dest: /etc/lvm/lvm.conf
+      owner: root 
+      group: root
+      mode: '0644'
+  
+  - name: Edit the /etc/cinder/cinder.conf file 
+    template:
+      src: cinder.conf.j2
+      dest: /etc/cinder/cinder.conf
+      owner: root 
+      group: cinder
+      mode: '0640'
+    vars:
+      ctrl: "{{ is_controller.stdout }}"              
+
+  - name: Create the LVM physical volume /dev/sdb             
+    shell: |
+      pvcreate /dev/{{ openstack.cinder.volume_device }}
+
+  - name: Create the LVM volume group cinder-volumes           
+    shell: |
+      vgcreate {{ openstack.cinder.volume_name }} /dev/{{ openstack.cinder.volume_device }}
+
+  - name: Start the Block Storage services and configure them to start when the system boots
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+    loop:      
+      - cinder-volume
+
+  - name: Disable tgt
+    ignore_errors: True
+    systemd:
+      name: "tgt"
+      enabled: no
+      state: stopped
+        
+      
+
+
+
+
+    
+
+

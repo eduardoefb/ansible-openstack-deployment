@@ -1,0 +1,54 @@
+---
+# tasks file
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  #- name: Configure ovn (Controller)
+  #  shell: |
+  #    ovn-nbctl set-connection ptcp:6641:{{ openstack.controller.ip }} -- set connection . inactivity_probe=60000 
+  #    ovn-sbctl set-connection ptcp:6642:{{ openstack.controller.ip }} -- set connection . inactivity_probe=60000 
+  #    ovs-vsctl set open . external-ids:ovn-remote=tcp:{{ openstack.controller.ip }}:6642 
+  #    ovs-vsctl set open . external-ids:ovn-encap-type=geneve,vxlan
+  #    ovs-vsctl set open . external-ids:ovn-encap-ip={{ openstack.controller.ip }}
+
+  #  args:
+  #    executable: /bin/bash    
+
+
+  - name: Create provider networks
+    shell: |
+      source /root/admin-openrc
+      openstack network create  --share --external --provider-physical-network {{ item.name }} --provider-network-type flat {{ item.name }}
+      openstack subnet create --network {{ item.name }} --allocation-pool start={{ item.range_begin }},end={{ item.range_end }} --dns-nameserver {{ openstack.controller.ip }} --gateway {{ item.gateway }} --subnet-range {{ item.network }} {{ item.name }}_ipv4       
+
+    args:
+      executable: /bin/bash    
+    
+    with_items:
+      "{{ openstack.provider_networks }}"
+
+
+  - name: Create vlan networks
+    shell: |
+      source /root/admin-openrc
+      openstack network create {{ item.name }} --share --external --provider-network-type vlan --provider-physical-network {{ item.provider }} --provider-segment {{ item.vlan }}
+      openstack subnet create --network {{ item.name }} --dns-nameserver {{ openstack.controller.ip }} --gateway {{ item.gateway }} --subnet-range {{ item.network }} {{ item.name }}
+      openstack network set --mtu {{ item.mtu }} {{ item.name }}
+    args:
+      executable: /bin/bash    
+    
+    with_items:
+      "{{ openstack.vlan_networks }}"
+      
+
+  - name: Create flavors
+    shell: |
+      source /root/admin-openrc
+      openstack flavor create  --vcpus {{ item.vcpus }} --ram {{ item.ram }} --disk {{ item.disk }} {{ item.name }}
+    args:
+      executable: /bin/bash    
+    
+    with_items:
+      "{{ openstack.flavors }}"

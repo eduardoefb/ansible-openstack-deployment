@@ -1,0 +1,133 @@
+---
+# tasks file
+# https://docs.openstack.org/install-guide/openstack-services.html
+# https://docs.openstack.org/neutron/train/install/compute-install-rdo.html
+# https://docs.openstack.org/train/install/
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Installing the packages
+    apt:
+      pkg:
+        - neutron-common 
+        - neutron-plugin-ml2 
+        - neutron-ovn-metadata-agent 
+        - ovn-host 
+        - openvswitch-switch   
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+
+  - name: Configure neutron_sudeors file
+    template:
+      src: neutron_sudoers.j2
+      dest: /etc/sudoers.d/neutron_sudoers
+      owner: root
+      mode: '0440'
+
+  - name: Check if node is also controller
+    shell: |
+      is_controller=0
+      if grep "connection = mysql+pymysql://nova:{{ NOVA_DBPASS }}@{{ openstack.controller.name }}/nova_api" /etc/nova/nova.conf >/dev/null 2>&1 ; then 
+        is_controller=1      
+      fi
+      echo ${is_controller}
+    register: is_controller
+    args:
+      executable: /bin/bash
+
+  - name: Debug
+    debug:
+      var: is_controller.stdout      
+      
+  
+  - name: Edit the /etc/neutron/neutron.conf file 
+    template:
+      src: neutron.conf.j2
+      dest: /etc/neutron/neutron.conf
+      owner: root 
+      group: neutron
+      mode: '0640'
+    vars:
+      ctrl: "{{ is_controller.stdout }}"   
+
+
+  - name: Edit the /etc/neutron/plugins/ml2/ml2_conf.ini
+    template:
+      src: ml2_conf.j2
+      dest: /etc/neutron/plugins/ml2/ml2_conf.ini
+      owner: root 
+      group: neutron
+      mode: '0640'
+           
+
+  - name: Edit the /etc/nova/nova.conf file 
+    template:
+      src: nova.conf.j2
+      dest: /etc/nova/nova.conf
+      owner: root 
+      group: nova
+      mode: '0640' 
+    vars:
+      ctrl: "{{ is_controller.stdout }}"   
+
+  - name: Edit the /etc/neutron/neutron_ovn_metadata_agent.ini
+    template:
+      src: neutron_ovn_metadata_agent.ini.j2
+      dest: /etc/neutron/neutron_ovn_metadata_agent.ini
+      owner: root 
+      group: neutron
+      mode: '0640'    
+
+  - name: Edit the /etc/default/openvswitch-switch 
+    template:
+      src: openvswitch-switch.j2
+      dest: /etc/default/openvswitch-switch 
+      owner: root 
+      group: neutron
+      mode: '0640'        
+
+  - name: Restart the Compute service
+    systemd:
+      name: nova-compute
+      state: restarted
+  
+  - name: Start the services
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+    loop:
+      - openvswitch-switch.service
+      - neutron-ovn-metadata-agent 
+
+  - name: Configure the OVS Service
+    shell: |
+      ovs-vsctl set open . external-ids:ovn-remote=tcp:{{ openstack.controller.ip }}:6642
+      # ovs-vsctl set open . external-ids:ovn-encap-type=geneve,vxlan
+      ovs-vsctl set open . external-ids:ovn-encap-type=geneve
+      ovs-vsctl set open . external-ids:ovn-encap-ip={{ ansible_eth0.ipv4.address }}
+      
+    args:
+      executable: /bin/bash
+
+  - name: Start the ovn-controller service
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+    loop:
+      - ovn-controller.service
+      - openvswitch-switch.service      
+    
+      
+
+
+
+
+    
+
+

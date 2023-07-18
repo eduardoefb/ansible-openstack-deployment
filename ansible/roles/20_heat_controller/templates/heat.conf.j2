@@ -1,0 +1,118 @@
+
+[DEFAULT]
+transport_url = rabbit://openstack:{{ RABBIT_PASS }}@{{ openstack.controller.name }}
+heat_metadata_server_url = https://{{ openstack.controller.name }}:8000
+heat_waitcondition_server_url = https://{{ openstack.controller.name }}:8000/v1/waitcondition
+stack_domain_admin = heat_domain_admin
+stack_domain_admin_password = {{ HEAT_ADMIN_DOMAIN_PASS }}
+stack_user_domain_name = heat
+
+[auth_password]
+
+[clients]
+
+[clients_aodh]
+
+[clients_barbican]
+
+[clients_cinder]
+
+[clients_designate]
+
+[clients_glance]
+
+[clients_heat]
+
+[clients_keystone]
+auth_uri = https://{{ openstack.controller.name }}:5000
+
+[clients_magnum]
+
+[clients_manila]
+
+[clients_mistral]
+
+[clients_monasca]
+
+[clients_neutron]
+
+[clients_nova]
+
+[clients_octavia]
+
+[clients_sahara]
+
+[clients_senlin]
+
+[clients_swift]
+
+[clients_trove]
+
+[clients_zaqar]
+
+[cors]
+
+[database]
+connection = mysql+pymysql://heat:{{ HEAT_DBPASS }}@{{ openstack.controller.name }}/heat
+
+[ec2authtoken]
+
+[eventlet_opts]
+
+[healthcheck]
+
+[heat_api]
+bind_host = {{ openstack.controller.ip }}
+bind_port = 8004
+cert_file = /etc/heat/{{ openstack.cert_prefix }}.{{ network.domain }}.crt
+key_file = /etc/heat/{{ openstack.cert_prefix }}.{{ network.domain }}.key
+
+[heat_api_cfn]
+bind_host = {{ openstack.controller.ip }}
+bind_port = 8000
+cert_file = /etc/heat/{{ openstack.cert_prefix }}.{{ network.domain }}.crt
+key_file = /etc/heat/{{ openstack.cert_prefix }}.{{ network.domain }}.key
+
+[heat_api_cloudwatch]
+
+[noauth]
+
+[oslo_messaging_amqp]
+
+[oslo_messaging_kafka]
+
+[oslo_messaging_notifications]
+
+[oslo_messaging_rabbit]
+
+[oslo_middleware]
+
+[oslo_policy]
+
+[paste_deploy]
+
+[profiler]
+
+[revision]
+
+[ssl]
+
+[trustee]
+auth_type = password
+auth_url = https://{{ openstack.controller.name }}:5000
+username = heat
+password = {{ HEAT_PASS }}
+user_domain_name = default
+
+[volumes]
+
+[keystone_authtoken]
+www_authenticate_uri = https://{{ openstack.controller.name }}:5000
+auth_url = https://{{ openstack.controller.name }}:5000
+memcached_servers = cont{{ openstack.controller.name }}roller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = heat
+password = {{ HEAT_PASS }}

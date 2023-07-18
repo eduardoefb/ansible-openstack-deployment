@@ -1,0 +1,90 @@
+---
+# tasks file
+# https://docs.openstack.org/install-guide/openstack-services.html
+# https://docs.openstack.org/horizon/train/install/install-rdo.html
+# https://docs.openstack.org/train/install/
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Installing the packages
+    apt:
+      name: "{{ packages }}"
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+    vars:
+      packages:        
+        - openstack-dashboard
+  
+  - name: Edit the /etc/openstack-dashboard/local_settings.py
+    template:
+      src: local_settings.j2
+      dest: /etc/openstack-dashboard/local_settings.py
+      owner: root 
+      group: horizon
+      mode: '0640'
+  
+  - name: Add the following line to /etc/apache2/conf-available/openstack-dashboard.conf  if not included
+    template:
+      src: openstack-dashboard.conf.j2
+      dest:  /etc/apache2/conf-available/openstack-dashboard.conf 
+      owner: root 
+      group: root
+      mode: '0644'  
+
+  - name: Edit /etc/apache2/sites-available/000-default.conf
+    template:
+      src: 000-default.conf.j2
+      dest:  /etc/apache2/sites-available/000-default.conf
+      owner: root 
+      group: root
+      mode: '0644'       
+
+  - name: Edit apache config ssl
+    template:
+      src: default-ssl.conf.j2
+      dest: /etc/apache2/sites-available/default-ssl.conf
+ 
+  - name: Create the certificate
+    shell: |      
+      openssl genrsa -out /etc/ssl/private/horizon.{{ network.domain }}.key 4096 
+      openssl req -new -key /etc/ssl/private/horizon.{{ network.domain }}.key -out /tmp/horizon.{{ network.domain }}.csr -subj "/{{ openstack.certificate_c }}/CN=horizon.{{ network.domain }}"
+
+      > /tmp/{{ network.domain }}.ext cat <<-EOF
+      basicConstraints=CA:FALSE
+      subjectAltName = @alt_names
+      [alt_names]
+      DNS.1 = *.{{ network.domain }}
+      IP.1 = {{ openstack.controller.ip }}
+      EOF
+      openssl x509 -req -in /tmp/horizon.{{ network.domain }}.csr -CA /etc/ssl/certs/rootCA.pem -CAkey /etc/ssl/private/rootCA.key -CAcreateserial -out /etc/ssl/certs/horizon.{{ network.domain }}.crt -days 3650 -sha256 -extfile /tmp/{{ network.domain }}.ext    
+      chmod 400 /etc/ssl/private/horizon.{{ network.domain }}.key
+        
+  - name: Enable ssl site
+    shell: a2ensite default-ssl
+    args:
+      executable: /bin/bash
+      
+  - name: Restart the web server and session storage service
+    systemd:
+      state: restarted
+      name: "{{ item }}"
+    with_items:
+      - apache2.service
+      - memcached.service
+
+
+    
+      
+      
+
+
+
+
+    
+
+

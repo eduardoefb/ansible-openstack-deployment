@@ -1,0 +1,157 @@
+---
+# tasks file
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Create database and user
+    shell: |
+      mysql -u root -p{{ ROOT_DBPASS }} -e "DROP DATABASE zun;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "CREATE DATABASE zun;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON zun.* TO 'zun'@'localhost' IDENTIFIED BY '{{ ZUN_DBPASS }}';"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON zun.* TO 'zun'@'%' IDENTIFIED BY '{{ ZUN_DBPASS }}';"
+
+
+  - name: Create kuryr user
+    shell: |
+      source /root/admin-openrc
+      openstack user create --domain default --password {{ KURYR_PASS }} kuryr   
+    args:
+      executable: /bin/bash      
+
+  - name: Add the admin role to the kuryr user
+    shell: |
+      source /root/admin-openrc
+      openstack role add --project service --user kuryr admin      
+    args:
+      executable: /bin/bash      
+
+  - name: Create zun user
+    shell: |
+      source /root/admin-openrc
+      openstack user create --domain default --password {{ ZUN_PASS }} zun     
+    args:
+      executable: /bin/bash      
+    
+  - name: Add the admin role to the zun user
+    shell: |
+      source /root/admin-openrc
+      openstack role add --project service --user zun admin
+    args:
+      executable: /bin/bash      
+  
+  - name: Create the zun service entity
+    shell: |
+      source /root/admin-openrc
+      openstack service create --name zun --description "Container Service" container
+    args:
+      executable: /bin/bash      
+
+  - name: Create the Container service API endpoints
+    shell: |
+      source /root/admin-openrc
+      openstack endpoint create --region RegionOne container public https://{{ openstack.controller.name }}:{{ item.remote_port }}/v1
+      openstack endpoint create --region RegionOne container internal https://{{ openstack.controller.name }}:{{ item.remote_port }}/v1
+      openstack endpoint create --region RegionOne container admin https://{{ openstack.controller.name }}:{{ item.remote_port }}/v1            
+    args:
+      executable: /bin/bash  
+    loop:
+      "{{ openstack.services }}"
+    when:
+      - item.name == "zun"
+
+  - name: Install and configure components
+    shell: |
+      groupadd --system zun
+      useradd --home-dir "/var/lib/zun" --create-home --system --shell /bin/false -g zun zun
+      rm -rfv /etc/zun 2>/dev/null
+      rm -rfv /var/lib/zum/zum 2>/dev/null
+      mkdir -p /etc/zun
+      chown zun:zun /etc/zun      
+    args:
+      executable: /bin/bash      
+
+    
+  - name: Installing the packages
+    apt:
+      name: "{{ packages }}"
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+    vars:
+      packages:        
+        - git
+        - python3-pip
+    
+  - name: Clone zun
+    shell: |
+      cd /var/lib/zun
+      git clone https://opendev.org/openstack/zun.git
+      cd /var/lib/zun/zun
+      pip3 install -r requirements.txt
+      python3 setup.py install          
+      chown -R zun:zun /var/lib/zun/zun      
+            
+    args:
+
+
+  - name: Generate a sample configuration file
+    shell: |
+      cd /var/lib/zun/zun
+      su -s /bin/sh -c "oslo-config-generator --config-file etc/zun/zun-config-generator.conf" zun
+      su -s /bin/sh -c "cp etc/zun/zun.conf.sample /etc/zun/zun.conf" zun
+      su -s /bin/sh -c "cp etc/zun/api-paste.ini /etc/zun" zun
+    args:
+      executable: /bin/bash           
+  
+  - name: Edit the /etc/zun/zun.conf file 
+    template:
+      src: zun.conf.j2
+      dest: /etc/zun/zun.conf
+      owner: root 
+      group: zun
+      mode: '0640'
+
+  - name: Edit the /etc/zun/api-paste.ini file 
+    template:
+      src: api-paste.ini.j2
+      dest: /etc/zun/api-paste.ini
+      owner: root 
+      group: zun
+      mode: '0640'      
+  
+  - name: Populate the database
+    shell: |
+      su -s /bin/sh -c "zun-db-manage upgrade" zun
+    args:
+      executable: /bin/bash
+
+  - name: Create an upstart config, it could be named as /etc/systemd/system/zun-api.service
+    template:
+      src: zun-api.service.j2
+      dest: /etc/systemd/system/zun-api.service
+      owner: root 
+      group: root
+      mode: '0640'      
+  
+  - name: Create an upstart config, it could be named as /etc/systemd/system/zun-wsproxy.service
+    template:
+      src: zun-wsproxy.service.j2
+      dest: /etc/systemd/system/zun-wsproxy.service
+      owner: root 
+      group: root
+      mode: '0640'  
+
+  
+  - name: Enable and start zun-api and zun-wsproxy
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+      daemon_reload: yes
+    with_items:
+      - zun-api
+      - zun-wsproxy

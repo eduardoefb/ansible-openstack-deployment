@@ -1,0 +1,13 @@
+server {
+    listen {{ remote_port }} default_server ssl;
+    ssl_certificate /etc/ssl/certs/{{ service_name }}.{{ network.domain }}.crt;
+    ssl_certificate_key /etc/ssl/private/{{ service_name }}.{{ network.domain }}.key;    
+    server_name _;
+
+    location / {
+       proxy_pass http://{{ local_ip }}:{{ local_port }} ;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;    
+       proxy_read_timeout 3600s;   
+    }
+}

@@ -1,0 +1,110 @@
+---
+# tasks file
+# https://docs.openstack.org/install-guide/openstack-services.html
+# https://docs.openstack.org/nova/train/install/compute-install-rdo.html
+# https://docs.openstack.org/train/install/
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Installing the packages
+    apt:
+      name: "{{ packages }}"
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success   
+    vars:
+      packages:
+        - nova-compute
+        - apparmor-profiles
+
+  - name: Check if node is also controller
+    shell: |
+      is_controller=0
+      if grep "connection = mysql+pymysql://nova:{{ NOVA_DBPASS }}@{{ openstack.controller.name }}/nova_api" /etc/nova/nova.conf >/dev/null 2>&1 ; then 
+        is_controller=1      
+      fi
+      echo ${is_controller}
+    register: is_controller
+    args:
+      executable: /bin/bash
+
+  - name: Debug
+    debug:
+      var: is_controller.stdout
+
+  - name: Edit the /etc/nova/nova.conf file 
+    template:
+      src: nova.conf.j2
+      dest: /etc/nova/nova.conf
+      owner: root 
+      group: nova
+      mode: '0640' 
+    vars:
+      ctrl: "{{ is_controller.stdout }}"  
+
+  - name: Check if host suppors kvm
+    shell: |
+      if [ `egrep -c '(vmx|svm)' /proc/cpuinfo` -gt 0 ]; then
+         echo "1"
+      else
+         echo "0"
+      fi
+    register: kvm_sup
+    args:
+      executable: /bin/bash
+
+
+  - name: Edit the /etc/nova/nova-compute.conf
+    template:
+      src: nova-compute.conf.j2
+      dest: /etc/nova/nova-compute.conf
+      owner: root 
+      group: nova
+      mode: '0640'    
+    vars:
+      kvm: "{{ kvm_sup.stdout }}"  
+
+  - name: Workaround, create  /usr/lib/python3/dist-packages/instances directory
+    shell: |
+      mkdir -p /usr/lib/python3/dist-packages/instances
+      chown -R root:nova /usr/lib/python3/dist-packages/
+      chmod -R 775 /usr/lib/python3/dist-packages/
+    args:
+
+  - name: Change ownership of /var/lib/nova to nova
+    shell: |
+      chown -R nova:nova /var/lib/nova    
+    args:
+
+  
+  - name: Start the Compute services and configure them to start when the system boots openstack-nova-api.service
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+    with_items:
+      - nova-compute
+
+  - name: Pause for 30 seconds to build app cache
+    pause:
+      seconds: "30"
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+

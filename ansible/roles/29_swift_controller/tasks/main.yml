@@ -1,0 +1,19 @@
+---
+# tasks file
+# https://docs.openstack.org/swift/wallaby/install/finalize-installation-ubuntu-debian.html
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Restart service memcached
+    ansible.builtin.systemd:
+      state: restarted
+      daemon_reload: yes
+      name: memcached
+
+  - name: Restart service swift-proxy
+    ansible.builtin.systemd:
+      state: restarted
+      daemon_reload: yes
+      name: swift-proxy      

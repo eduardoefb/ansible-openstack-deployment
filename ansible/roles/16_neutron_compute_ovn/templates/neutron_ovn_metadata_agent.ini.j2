@@ -1,0 +1,16 @@
+[DEFAULT]
+# line 2 : add to specify Nova API host
+nova_metadata_host = {{ openstack.controller.name }}
+# nova_metadata_protocol = https
+# specify any secret key you like
+metadata_proxy_shared_secret = {{ METADATA_SECRET }}
+
+[ovs]
+# ovsdb_connection = tcp:{{ openstack.controller.ip }}:6640
+ovsdb_connection = tcp:127.0.0.1:6640
+
+[agent]
+root_helper = sudo neutron-rootwrap /etc/neutron/rootwrap.conf
+
+[ovn]
+ovn_sb_connection = tcp:{{ openstack.controller.ip }}:6642

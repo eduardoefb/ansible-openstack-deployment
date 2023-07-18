@@ -1,0 +1,254 @@
+---
+# tasks file
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Delete endpoint, service and users if they exist
+    ignore_errors: yes
+    shell: |
+      if [ ! -f /root/octavia-openrc ]; then
+        source /root/admin-openrc
+        for i in `openstack endpoint list | grep octavia | awk '{print $2}'`; do  openstack endpoint delete ${i}; done
+        for i in `openstack service list | grep octavia | awk '{print $2}'`; do  openstack service delete ${i}; done
+        for i in `openstack user list | grep octavia | awk '{print $2}'`; do  openstack user delete ${i}; done
+      fi
+    args:
+      executable: /bin/bash        
+
+  - name: Create the octavia user
+    shell: |
+      if [ ! -f /root/octavia-openrc ]; then
+        source /root/admin-openrc
+        openstack user create --domain default --password {{ OCTAVIA_PASS }} octavia     
+      fi
+    args:
+      executable: /bin/bash  
+
+  - name: Add the admin role to the octavia user
+    shell: |
+      if [ ! -f /root/octavia-openrc ]; then
+        source /root/admin-openrc
+        openstack role add --project service --user octavia admin     
+      fi
+    args:
+      executable: /bin/bash   
+      
+  - name: Create the octavia service entities
+    shell: |
+      if [ ! -f /root/octavia-openrc ]; then
+        source /root/admin-openrc
+        openstack service create --name octavia --description "OpenStack Octavia" load-balancer
+      fi
+    args:
+      executable: /bin/bash    
+      
+  - name: Create the load-balancer service API endpoints
+    shell: |
+      if [ ! -f /root/octavia-openrc ]; then
+        source /root/admin-openrc
+        openstack endpoint create --region RegionOne load-balancer public https://{{ openstack.controller.name }}:{{ item.remote_port }}
+        openstack endpoint create --region RegionOne load-balancer internal https://{{ openstack.controller.name }}:{{ item.remote_port }}
+        openstack endpoint create --region RegionOne load-balancer admin https://{{ openstack.controller.name }}:{{ item.remote_port }}     
+      fi
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ openstack.services }}"
+    when:
+      - item.name == "octavia"           
+
+  - name: Create database and user
+    shell: |
+      mysql -u root -p{{ ROOT_DBPASS }} -e "DROP DATABASE octavia;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "CREATE DATABASE octavia;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON octavia.* TO 'octavia'@'localhost' IDENTIFIED BY '{{ OCTAVIA_DBPASS }}';"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON octavia.* TO 'octavia'@'%' IDENTIFIED BY '{{ OCTAVIA_DBPASS }}';"
+
+      mysql -u root -p{{ ROOT_DBPASS }} -e "DROP DATABASE octavia_persistence;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "CREATE DATABASE octavia_persistence;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON octavia.* TO 'octavia_persistence'@'localhost' IDENTIFIED BY '{{ OCTAVIA_DBPASS }}';"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON octavia.* TO 'octavia_persistence'@'%' IDENTIFIED BY '{{ OCTAVIA_DBPASS }}';"
+      
+  
+  - name: Install octavia-diskimage-retrofit
+    shell: snap install octavia-diskimage-retrofit --beta --devmode 
+    args:
+      executable: /bin/bash
+  
+  - name: Get Image
+    get_url:
+      url: https://cloud-images.ubuntu.com/minimal/releases/focal/release/ubuntu-20.04-minimal-cloudimg-amd64.img
+      dest: /var/snap/octavia-diskimage-retrofit/common/tmp/ubuntu-20.04-minimal-cloudimg-amd64.img
+
+  - name: Convert image
+    shell: |       
+      if [ ! -f /root/octavia-openrc ]; then     
+        cd /var/snap/octavia-diskimage-retrofit/common/tmp && octavia-diskimage-retrofit ubuntu-20.04-minimal-cloudimg-amd64.img ubuntu-amphora-haproxy-amd64.qcow2
+      fi
+      
+    args:
+      executable: /bin/bash
+
+  - name: Create octavia-openrc file
+    template:
+      src: octavia-openrc.j2
+      dest: /root/octavia-openrc      
+
+  - name: Create image
+    shell: |      
+      source /root/octavia-openrc
+      if ! openstack image list | grep "Amphora"; then
+        cd /var/snap/octavia-diskimage-retrofit/common/tmp 
+        qemu-img convert -f qcow2 -O raw ubuntu-amphora-haproxy-amd64.qcow2 ubuntu-amphora-haproxy-amd64.raw
+        #openstack image create "Amphora" --tag "Amphora" --file ubuntu-amphora-haproxy-amd64.qcow2 --disk-format qcow2 --container-format bare --private --project service 
+        openstack image create "Amphora" --tag "Amphora" --file ubuntu-amphora-haproxy-amd64.raw --disk-format raw --container-format bare --private --project service 
+      fi
+    register: img_res
+    retries: 20
+    delay: 10
+    until: img_res is success
+
+    args:
+      executable: /bin/bash     
+
+  - name: Create flavor
+    shell: |      
+      source /root/octavia-openrc
+      if ! openstack flavor list --all | grep "amphora "; then        
+        openstack flavor create --id 200 --vcpus 1 --ram 1024 --disk 5 "amphora" --private        
+      fi
+        
+    args:
+      executable: /bin/bash   
+
+  - name: Install packages
+    apt:
+      pkg: 
+        - octavia-api
+        - octavia-health-manager 
+        - octavia-housekeeping
+        - octavia-worker
+        - python3-octavia
+        - python3-octaviaclient
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success        
+  
+  - name: Clear directory
+    file:
+      path: /root/octavia
+      state: absent
+
+  - name: Clone repo
+    git: 
+      repo: https://opendev.org/openstack/octavia.git
+      dest: /root/octavia
+      version: master
+
+  - name: Create the certificates
+    shell: |
+      cd /root/octavia/bin/
+      mkdir -p /etc/octavia/certs/private
+      source create_dual_intermediate_CA.sh      
+      cp -p etc/octavia/certs/server_ca.cert.pem /etc/octavia/certs
+      cp -p etc/octavia/certs/server_ca-chain.cert.pem /etc/octavia/certs
+      cp -p etc/octavia/certs/server_ca.key.pem /etc/octavia/certs/private
+      cp -p etc/octavia/certs/client_ca.cert.pem /etc/octavia/certs
+      cp -p etc/octavia/certs/client.cert-and-key.pem /etc/octavia/certs/private 
+      chmod 755 /etc/octavia -R  
+    args:
+      executable: /bin/bash
+
+  - name: Create security groups and their rules
+    shell: |
+      source /root/octavia-openrc
+      if ! openstack security group list | grep lb-mgmt-sec-grp; then
+        openstack security group create lb-mgmt-sec-grp
+        openstack security group rule create --protocol icmp lb-mgmt-sec-grp
+        openstack security group rule create --protocol tcp --dst-port 22 lb-mgmt-sec-grp
+        openstack security group rule create --protocol tcp --dst-port 9443 lb-mgmt-sec-grp
+        openstack security group create lb-health-mgr-sec-grp
+        openstack security group rule create --protocol udp --dst-port 5555 lb-health-mgr-sec-grp      
+      fi  
+    args:
+      executable: /bin/bash
+
+
+  - name: Create a key pair for logging in to the amphora instance
+    shell: |
+      source /root/octavia-openrc
+      if [ ! -f /root/octavia.pem ]; then
+        openstack keypair create octavia > /root/octavia.pem
+        chmod 400 /root/octavia.pem
+      fi  
+    args:
+      executable: /bin/bash
+
+
+  - name: Create dhclient.conf file for dhclient
+    shell: |
+      mkdir -m755 -p /etc/dhcp/octavia
+      \cp -f /root/octavia/etc/dhcp/dhclient.conf /etc/dhcp/octavia
+    args:
+      executable: /bin/bash
+   
+  - name: Get network id
+    shell: | 
+      source /root/octavia-openrc
+      openstack network show {{ openstack.octavia_network_name }} -f value -c id
+    register: network_id    
+    args:
+      executable: /bin/bash
+  
+  - name: Get secgroup id
+    shell: | 
+      source /root/octavia-openrc
+      openstack security group show lb-mgmt-sec-grp -f value -c id
+    register: secgroup_id    
+    args:
+      executable: /bin/bash
+
+  - name: Get project id
+    shell: | 
+      source /root/octavia-openrc
+      openstack project show service -f value -c id
+    register: project_id    
+    args:
+      executable: /bin/bash
+
+  - name: Edit the /etc/octavia/octavia.conf file
+    template:
+      src: octavia.conf.j2
+      dest: /etc/octavia/octavia.conf
+      owner: root
+      group: octavia
+    
+
+  - name: Populate the octavia database
+    shell: |
+      octavia-db-manage --config-file /etc/octavia/octavia.conf upgrade head
+    args:
+      executable: /bin/bash
+  
+  - name: Octavia policies
+    template:
+      src: octavia_policies.yml.j2
+      dest: /etc/octavia/policy.yaml
+      owner: root
+      group: octavia
+      mode: "0640"
+
+  - name: Restart services
+    systemd:
+      name: "{{ item }}"      
+      state: restarted
+      enabled: yes
+      daemon_reload: yes
+    loop:
+      - octavia-api
+      - octavia-health-manager
+      - octavia-housekeeping
+      - octavia-worker

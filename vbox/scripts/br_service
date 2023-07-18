@@ -1,0 +1,10 @@
+[Unit]
+Description=Execute br.sh every 60 seconds
+
+[Service]
+ExecStart=/bin/bash /usr/local/sbin/br_workaround
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,6 @@
+nodes:
+  - 172.250.0.10
+  - 172.250.0.11
+  - 172.250.0.12
+
+key_file: /home/eduardoefb/.ssh/id_rsa.pub

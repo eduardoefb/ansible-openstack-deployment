@@ -1,0 +1,8 @@
+[nodes]
+10.2.1.56 ansible_user=cloud ansible_password=cloud
+10.2.1.57 ansible_user=cloud ansible_password=cloud
+10.2.1.55 ansible_user=cloud ansible_password=cloud
+
+[controller]
+10.2.1.55 ansible_user=cloud ansible_password=cloud
+

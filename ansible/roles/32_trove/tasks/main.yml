@@ -1,0 +1,213 @@
+---
+# tasks file
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Delete endpoint, service and users if they exist
+    ignore_errors: yes
+    shell: |
+      source /root/admin-openrc
+      openstack endpoint list | grep trove | awk '{print $2}' | xargs openstack endpoint delete
+      openstack service list | grep trove | awk '{print $2}' | xargs openstack service delete
+      openstack user list | grep trove | awk '{print $2}' | xargs openstack user delete
+    args:
+      executable: /bin/bash        
+
+  - name: Create the trove user
+    shell: |
+      source /root/admin-openrc
+      openstack user create --domain default --password {{ TROVE_PASS }} trove     
+    args:
+      executable: /bin/bash  
+
+  - name: Add the admin role to the trove user
+    shell: |
+      source /root/admin-openrc
+      openstack role add --project service --user trove admin     
+    args:
+      executable: /bin/bash   
+      
+  - name: Create the trove service entities
+    shell: |
+      source /root/admin-openrc
+      openstack service create --name trove --description "Database" database
+    args:
+      executable: /bin/bash    
+      
+  - name: Create the Database service API endpoints
+    shell: |
+      source /root/admin-openrc
+      openstack endpoint create --region RegionOne database public https://{{ openstack.controller.name }}:{{ item.remote_port }}/v1.0/%\(tenant_id\)s
+      openstack endpoint create --region RegionOne database internal https://{{ openstack.controller.name }}:{{ item.remote_port }}/v1.0/%\(tenant_id\)s
+      openstack endpoint create --region RegionOne database admin https://{{ openstack.controller.name }}:{{ item.remote_port }}/v1.0/%\(tenant_id\)s      
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ openstack.services }}"
+    when:
+      - item.name == "trove"           
+
+  - name: Create database and user
+    shell: |
+      mysql -u root -p{{ ROOT_DBPASS }} -e "DROP DATABASE trove;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "CREATE DATABASE trove;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON trove.* TO 'trove'@'localhost' IDENTIFIED BY '{{ TROVE_DBPASS }}';"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON trove.* TO 'trove'@'%' IDENTIFIED BY '{{ TROVE_DBPASS }}';"
+    
+  - name: Install packages
+    apt:
+      pkg: 
+        - python3-trove
+        - trove-common
+        - trove-api
+        - trove-taskmanager
+        - trove-conductor         
+        - python3-pip     
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success    
+
+  - name: Remove python-troveclient
+    pip:
+      name: python-troveclient  
+      state: absent
+      executable: pip3
+
+  - name: Remove trove-dashboard
+    pip:
+      name: trove-dashboard
+      state: absent   
+      executable: pip3
+   
+  - name: Install python-troveclient
+    pip:
+      name: python-troveclient 
+      executable: pip3   
+
+  - name: Create trove rc file
+    template:
+      src: trove-openrc.j2
+      dest: /root/trove-openrc
+      owner: root
+      group: root
+      mode: '0700'
+
+  - name: Delete trove keypair if exists
+    ignore_errors: yes
+    shell: |
+      source /root/trove-openrc
+      openstack keypair delete trove 
+    args:
+      executable: /bin/bash      
+
+  - name: Create trove keypair
+    shell: |
+      source /root/trove-openrc
+      openstack keypair create trove > /root/trove.pem
+      chmod 400 /root/trove.pem
+    args:
+      executable: /bin/bash            
+
+  - name: Delete and create lvmdriver-1 volume type
+    shell: |
+      source /root/admin-openrc
+      for f in `openstack volume type list | grep 'lvmdriver-1' | awk '{print $2}'`; do openstack volume type delete $f; done
+      openstack volume type create lvmdriver-1
+    args:
+      executable: /bin/bash   
+
+  - name: Delete security grupo if exists
+    ignore_errors: yes
+    shell: |
+      source /root/trove-openrc
+      openstack security group delete trove      
+    args:
+      executable: /bin/bash    
+
+  - name: Create security group
+    shell: |
+      source /root/trove-openrc
+      openstack security group create trove
+      openstack security group rule create --proto icmp trove
+      openstack security group rule create --proto tcp --dst-port 22 trove
+      openstack security group rule create --proto tcp --dst-port 3306 trove
+    args:
+      executable: /bin/bash        
+
+  - name: Get network id
+    shell: |
+      source /root/trove-openrc      
+      openstack network show -f value -c id {{ openstack.trove_network_name }} 
+    register: trove_network_id
+    args:
+      executable: /bin/bash   
+   
+  - name: Get sec group id
+    shell: |
+      source /root/trove-openrc      
+      openstack security group show -f value -c id trove 
+      
+    register: sec
+    args:
+      executable: /bin/bash         
+        
+  - name: Create trove.conf
+    template: 
+      src: trove.conf.j2
+      dest: /etc/trove/trove.conf
+      owner: root
+      group: trove
+      mode: '0640'
+
+  - name: Create /etc/trove/trove-guestagent.conf
+    template: 
+      src: trove-guestagent.conf.j2
+      dest: /etc/trove/trove-guestagent.conf
+      owner: root
+      group: trove
+      mode: '0640'     
+
+  - name: Populate the trove database
+    shell: |
+      source /root/admin-openrc
+      su -s /bin/sh -c "trove-manage db_sync" trove
+    args:
+      executable: /bin/bash 
+
+  - name: Install trove-dashboard
+    pip:
+      name: trove-dashboard
+       
+  #- name: Copy files
+  #  shell: |
+  #    find /usr/local/lib/python3.8/dist-packages/trove_dashboard/enabled/ -name *.py  -exec cp {} /usr/lib/python3/dist-packages/openstack_dashboard/enabled/ \;
+  #  args:
+  #    executable: /bin/bash
+
+  - name: Restart services
+    systemd:
+      name: "{{ item }}"      
+      state: restarted
+      enabled: yes
+      daemon_reload: yes
+    loop:
+      - trove-api
+      - trove-taskmanager
+      - trove-conductor
+      - apache2  
+  
+  - name: Copy files 
+    copy:
+      src: "/root/{{ item }}"
+      dest: "/home/cloud/{{ item }}"
+      owner: cloud
+      group: cloud
+      mode: '0700'
+      remote_src: yes
+    loop:
+      - rootCA.pem
+      - admin-openrc

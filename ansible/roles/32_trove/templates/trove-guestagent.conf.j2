@@ -1,0 +1,27 @@
+[DEFAULT]
+log_file = trove-guestagent.log
+log_dir = /var/log/trove/
+ignore_users = os_admin
+control_exchange = trove
+nova_keypair = exemplo
+transport_url = rabbit://openstack:{{ RABBIT_PASS }}@{{ openstack.controller.name }}:5672/
+rpc_backend = rabbit
+command_process_timeout = 60
+use_syslog = False
+debug = True
+
+[service_credentials]
+auth_url = https://{{ openstack.controller.name }}:5000/
+auth_uri = https://{{ openstack.controller.name }}:5000/
+region_name = RegionOne
+project_name = service
+password = {{ TROVE_PASS }}
+project_domain_name = Default
+user_domain_name = Default
+username = trove
+
+[oslo_messaging_amqp]
+[oslo_messaging_kafka]
+[oslo_messaging_notifications]
+[oslo_messaging_rabbit]
+[oslo_policy]

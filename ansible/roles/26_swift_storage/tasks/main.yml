@@ -1,0 +1,129 @@
+---
+# tasks file
+# https://docs.openstack.org/swift/wallaby/install/storage-install-ubuntu-debian.html
+
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+
+  - name: Installing the packages
+    apt:
+      name: "{{ packages }}"
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+    vars:
+      packages:
+        - xfsprogs
+        - rsync
+
+  - name: Umount device
+    ignore_errors: yes
+    shell: |
+      umount /dev/{{ openstack.swift.volume_device }}
+    args:
+      executable: /bin/bash
+    
+  - name: Format the swift devices as XFS
+    shell: |
+      mkfs.xfs /dev/{{ openstack.swift.volume_device }} -f
+    args:
+      executable: /bin/bash
+
+  - name: Create the mount point directory structure
+    file:
+      path: "/srv/node/{{ openstack.swift.volume_device }}"
+      state: directory
+      mode: '0755'
+  
+  
+  - name: Edit the /etc/fstab file and add the following to it
+    shell: |      
+      uid=`blkid  /dev/{{ openstack.swift.volume_device }}  | grep -oP '(?<=UUID=")(.*)(?=" TYPE)'`
+      sed -i "/\/srv\/node\/{{ openstack.swift.volume_device }}/d" /etc/fstab
+      echo "/dev/{{ openstack.swift.volume_device }} /srv/node/{{ openstack.swift.volume_device }} xfs noatime 0 2" >> /etc/fstab
+      mount /dev/{{ openstack.swift.volume_device }}
+    args:
+      executable: /bin/bash
+
+
+  - name: Edit the /etc/rsyncd.conf  file 
+    template:
+      src: rsyncd.conf.j2
+      dest: /etc/rsyncd.conf 
+      owner: root 
+      group: root
+      mode: '0640'        
+
+  - name: Edit the /etc/default/rsync  file 
+    template:
+      src: rsync.j2
+      dest: /etc/default/rsync
+      owner: root 
+      group: root
+      mode: '0644'    
+      
+  - name: Start the rsync service
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+    with_items:
+      - rsync
+
+  - name: Installing the packages
+    apt:
+      name: "{{ packages }}"
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+    vars:
+      packages:
+        - swift
+        - swift-account      
+        - swift-container
+        - swift-object
+
+  - name: Edit the /etc/swift/account-server.conf  file 
+    template:
+      src: account-server.conf-sample.j2
+      dest: /etc/swift/account-server.conf
+      owner: root 
+      group: swift
+      mode: '0640'        
+      
+  - name: Edit the /etc/swift/container-server.conf  file 
+    template:
+      src: container-server.conf-sample.j2
+      dest: /etc/swift/container-server.conf
+      owner: root 
+      group: swift
+      mode: '0640'     
+      
+  - name: Edit the /etc/swift/object-server.conf  file 
+    template:
+      src: object-server.conf-sample.j2
+      dest: /etc/swift/object-server.conf
+      owner: root 
+      group: swift
+      mode: '0640'      
+      
+  - name: Ensure proper ownership of the mount point directory structure
+    shell: |
+      chown -R swift:swift /srv/node
+    args:
+      executable: /bin/bash      
+
+  - name: Ensure proper ownership of the mount point directory structure
+    shell: |
+      mkdir -p /var/cache/swift
+      chown -R root:swUnit is bound to inactive unit dev-disk-byift /var/cache/swift
+      chmod -R 775 /var/cache/swift
+    args:
+      executable: /bin/bash      

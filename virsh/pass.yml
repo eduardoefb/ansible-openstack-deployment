@@ -1,0 +1,10 @@
+
+- hosts: nodes 
+  user: cloud
+  become: yes
+  gather_facts: false 
+  tasks:
+    - include_vars: "{{ playbook_dir }}/config.yml"  
+    - name: Change passwod
+      shell: |
+        usermod -p '{{ new_password }}' cloud     

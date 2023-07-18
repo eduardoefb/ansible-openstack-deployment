@@ -1,0 +1,7 @@
+
+# Create images:
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 31_images  

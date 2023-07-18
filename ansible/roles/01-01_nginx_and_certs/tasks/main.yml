@@ -1,0 +1,95 @@
+---
+# tasks file for 01_envireoment
+  - include_vars: "{{ playbook_dir }}/config.yml"      
+  - include_vars: "main.yml"
+
+  - name: Update system
+    apt:
+      name: '*'
+      state: 'latest'
+      update_cache: yes
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success
+
+  - name: Check if reboot required
+    stat:
+      path: /var/run/reboot-required
+    register: reboot_required_file    
+
+  - name: Reboot
+    reboot:
+      msg: Reboot triggered
+      reboot_timeout: 360
+    when: reboot_required_file.stat.exists == true
+
+  - name: Install nginx
+    apt:
+      name: nginx
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+
+  - name: Crate the cert directory
+    file:
+      path: /etc/nginx/certs
+      state: directory
+      
+  - name: Define the root CA
+    shell: |      
+      openssl genrsa -out /etc/ssl/private/rootCA.key 4096
+      openssl req -x509 -new -nodes -key /etc/ssl/private/rootCA.key -sha256 -days {{ openstack.certificate_duration }} -out /etc/ssl/certs/rootCA.pem -subj "/{{ openstack.certificate_c }}/CN=rootca.{{ network.domain }}"
+      chmod 400 /etc/ssl/private/rootCA.key
+      cat /etc/ssl/certs/rootCA.pem > /root/rootCA.pem
+
+  - name: Create the openstack certificate
+    shell: |      
+      openssl genrsa -out /etc/ssl/private/{{ item }}.{{ network.domain }}.key 4096 
+      openssl req -new -key /etc/ssl/private/{{ item }}.{{ network.domain }}.key -out /tmp/{{ item }}.{{ network.domain }}.csr -subj "/{{ openstack.certificate_c }}/CN={{ item }}.{{ network.domain }}"
+
+      > /tmp/{{ network.domain }}.ext cat <<-EOF
+      basicConstraints=CA:FALSE
+      subjectAltName = @alt_names
+      [alt_names]
+      DNS.1 = *.{{ network.domain }}
+      IP.1 = {{ openstack.controller.ip }}
+      EOF
+      openssl x509 -req -in /tmp/{{ item }}.{{ network.domain }}.csr -CA /etc/ssl/certs/rootCA.pem -CAkey /etc/ssl/private/rootCA.key -CAcreateserial -out /etc/ssl/certs/{{ item }}.{{ network.domain }}.crt -days {{ openstack.certificate_duration }} -sha256 -extfile /tmp/{{ network.domain }}.ext    
+      chmod 400 /etc/ssl/private/{{ item }}.{{ network.domain }}.key
+    loop:
+      - "{{ openstack.cert_prefix }}"
+
+  - name: Remove nginx config files
+    file:
+      path: "{{ item }}"      
+      state: absent
+    loop:
+      - /etc/nginx/sites-available/default
+      - /etc/nginx/sites-enabled/default
+    
+  - name: Nginx config
+    template:
+      src: nginx.conf.j2
+      dest: /etc/nginx/nginx.conf
+      owner: root
+      group: root
+          
+  - name: Allow large files for nginx
+    ansible.builtin.lineinfile:
+      path: /etc/sudoers
+      state: present
+      regexp: '^%ADMIN ALL='
+      line: '%ADMIN ALL=(ALL) NOPASSWD: ALL'
+      validate: /usr/sbin/visudo -cf %s      
+        
+  - name: Restart nginx
+    systemd:
+       name: nginx
+       state: restarted
+ 
+        
+
+  

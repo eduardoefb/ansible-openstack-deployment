@@ -1,0 +1,55 @@
+---
+# tasks file
+# https://docs.openstack.org/install-guide/openstack-services.html
+# https://docs.openstack.org/neutron/train/install/compute-install-rdo.html
+# https://docs.openstack.org/train/install/
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"   
+    
+  - name:  Configure ovn bridge mapping 1
+    shell:  |
+      ovs-vsctl add-br br-{{ item.device }} 
+      ovs-vsctl add-port br-{{ item.device }} {{ item.device }}  
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ openstack.provider_networks }}"      
+
+  - name:  Configure ovn bridge mapping 2
+    shell:  |
+      br_str=""
+      {% for i in openstack.provider_networks %}
+      br_str="${br_str},{{ i.name }}:br-{{ i.device }}"
+      {% endfor %}
+      br_str=`echo ${br_str} | sed 's|^,||g'`
+      br_str=`echo ${br_str} | sed 's|,$||g'`
+      ovs-vsctl set open . external-ids:ovn-bridge-mappings=${br_str}  
+    args:
+      executable: /bin/bash 
+
+  - name: Delete network configuration for provider networks
+    file:
+      path: "/etc/network/interfaces.d/{{ item.device }}"
+      state: absent
+    loop:
+      "{{ openstack.provider_networks }}" 
+
+  - name: Create network configuration for provider networks
+    copy:
+      dest: "/etc/network/interfaces.d/{{ item.device }}"
+      content: |
+        auto {{ item.device }}
+        iface {{ item.device }} inet manual
+    loop:
+      "{{ openstack.provider_networks }}"             
+      
+      
+
+
+
+
+    
+
+

@@ -1,0 +1,9 @@
+export OS_PROJECT_DOMAIN_NAME=default
+export OS_USER_DOMAIN_NAME=default
+export OS_PROJECT_NAME=openshift
+export OS_USERNAME=openshift
+export OS_PASSWORD=openshift
+export OS_AUTH_URL=https://cvip.openstacklab.int:5000/v3
+export OS_IDENTITY_API_VERSION=3
+export OS_IMAGE_API_VERSION=2
+export OS_CACERT=`pwd`/rootCA.pem

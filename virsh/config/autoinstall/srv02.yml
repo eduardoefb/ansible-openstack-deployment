@@ -1,0 +1,136 @@
+#cloud-config
+autoinstall:
+  apt:
+    disable_components: []
+    geoip: true
+    preserve_sources_list: true
+    primary:
+    - arches:
+      - amd64
+      - i386
+      uri: http://archive.ubuntu.com/ubuntu
+    - arches:
+      - default
+      uri: http://ports.ubuntu.com/ubuntu-ports
+  apt-config:
+    - update/updated: false      
+  drivers:
+    install: false
+  identity:
+    hostname: srv02
+    password: $6$XCKGwC/4HIEnMBKV$3OBaifSr1Tvs0kyn5Hc0ueFVh6yYQ2uV/a1qlyVyxK/hHqnZZSKZKsayPj5xfDotZxpRInia5567lMZs9lyKW1
+    realname: cloud
+    username: cloud
+  kernel:
+    package: linux-generic
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ''
+  locale: en_US.UTF-8
+  network:
+    ethernets:
+      enp0s3:
+        addresses:
+        - 172.250.0.11/24
+        gateway4: 172.250.0.1
+        nameservers:
+          addresses:
+          - 0.0.0.0
+          search: []
+      enp0s4:
+        addresses:
+        - 172.250.1.11/24
+        nameservers:
+          addresses: []
+          search: []
+      enp0s5:
+        addresses:
+        - 172.250.2.11/24
+        nameservers:
+          addresses: []
+          search: []
+    version: 2
+  ssh:
+    allow-pw: true
+    authorized-keys: []
+    install-server: true
+  storage:
+    swap:
+      size: 16G  
+    config:
+    - ptable: gpt
+      path: /dev/sda
+      wipe: superblock
+      preserve: false
+      name: ''
+      grub_device: true
+      type: disk
+      id: disk-sda
+
+    - device: disk-sda
+      size: 1M
+      flag: bios_grub
+      number: 1
+      preserve: false
+      grub_device: false
+      type: partition
+      id: partition-0
+
+    - device: disk-sda
+      size: 2G
+      wipe: superblock
+      flag: ''
+      number: 2
+      preserve: false
+      grub_device: false
+      type: partition
+      id: partition-1
+
+    - fstype: ext4
+      volume: partition-1
+      preserve: false
+      type: format
+      id: format-0
+
+    - device: disk-sda
+      size: -1
+      wipe: superblock
+      flag: ''
+      number: 3
+      preserve: false
+      grub_device: false
+      type: partition
+      id: partition-2
+    - name: ubuntu-vg
+      devices:
+      - partition-2
+      preserve: false
+      type: lvm_volgroup
+      id: lvm_volgroup-0
+
+    - name: ubuntu-lv
+      volgroup: lvm_volgroup-0
+      size: -1
+      wipe: superblock
+      preserve: false
+      type: lvm_partition
+      id: lvm_partition-0
+
+    - fstype: ext4
+      volume: lvm_partition-0
+      preserve: false
+      type: format
+      id: format-1
+
+    - path: /
+      device: format-1
+      type: mount
+      id: mount-1
+
+    - path: /boot
+      device: format-0
+      type: mount
+      id: mount-0
+  
+  version: 1

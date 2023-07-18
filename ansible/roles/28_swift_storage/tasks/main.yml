@@ -1,0 +1,47 @@
+---
+# tasks file
+# https://docs.openstack.org/swift/wallaby/install/storage-install-ubuntu-debian.html
+
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Transfer account.ring.gz
+    copy:
+      src: /tmp/account.ring.gz
+      dest: /etc/swift/account.ring.gz
+
+  - name: Transfer container.ring.gz
+    copy:
+      src: /tmp/container.ring.gz
+      dest: /etc/swift/container.ring.gz
+
+  - name: Transfer object.ring.gz
+    copy:
+      src: /tmp/object.ring.gz
+      dest: /etc/swift/object.ring.gz            
+
+  - name: Edit the /etc/swift/swift.conf  file 
+    template:
+      src: swift.conf-sample.j2
+      dest: /etc/swift/swift.conf
+      owner: root 
+      group: swift
+      mode: '0640'   
+      
+  - name: Edit the /etc/swift/internal-client.conf file 
+    template:
+      src: internal-client.conf-sample.j2
+      dest: /etc/swift/internal-client.conf
+      owner: root 
+      group: swift
+      mode: '0640'         
+      
+  - name: Ensure proper ownership of the mount point directory structure
+    shell: |
+      chown -R root:swift /etc/swift
+    args:
+      executable: /bin/bash      
+
+

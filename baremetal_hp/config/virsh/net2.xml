@@ -1,0 +1,6 @@
+<network>
+  <name>net2</name>
+  <bridge name='virbr2' stp='on' delay='0'/>
+  <forward mode='nat'/>
+  <ip address='172.250.1.1' netmask='255.255.255.0'></ip>
+</network>

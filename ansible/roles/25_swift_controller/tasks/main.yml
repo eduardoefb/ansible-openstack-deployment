@@ -1,0 +1,90 @@
+---
+# tasks file
+# https://docs.openstack.org/swift/wallaby/install/controller-install.html
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Delete user, project, service and endpoints
+    ignore_errors: yes
+    shell: |
+      source /root/admin-openrc
+      for i in `openstack endpoint list -c ID -c "Service Name" -c URL | awk '/swift/ {print $2}'`; do
+        openstack endpoint delete ${i}
+      done
+      for i in `openstack service list | awk '/swift/ {print $2}'`; do
+        openstack service delete ${i}
+      done
+      for i in `openstack user list | awk '/swift/ {print $2}'`; do
+        openstack user delete ${i}
+      done      
+    args: 
+      executable: /bin/bash   
+
+  - name: Create user
+    shell: |
+      source /root/admin-openrc
+      openstack user create --domain default --password {{ SWIFT_PASS }} swift        
+    args: 
+      executable: /bin/bash             
+    
+  - name: Add the admin role to the swift user
+    shell: |
+      source /root/admin-openrc
+      openstack role add --project service --user swift admin
+    args: 
+      executable: /bin/bash        
+  
+  - name: Create the swift service entity
+    shell: |
+      source /root/admin-openrc
+      openstack service create --name swift --description "OpenStack Object Storage" object-store
+      openstack endpoint create --region RegionOne object-store public https://{{ openstack.controller.name }}:8080/v1/AUTH_%\(project_id\)s      
+      openstack endpoint create --region RegionOne object-store internal https://{{ openstack.controller.name }}:8080/v1/AUTH_%\(project_id\)s
+      openstack endpoint create --region RegionOne object-store admin https://{{ openstack.controller.name }}:8080/v1        
+    args: 
+      executable: /bin/bash  
+    loop:
+      "{{ openstack.services }}"
+    when:
+      - item.name == "swift"                                
+       
+  - name: Installing the packages
+    apt:
+      name: "{{ packages }}"
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+    vars:
+      packages:
+        - swift
+        - swift-proxy
+        - python3-swiftclient
+
+  - name: Edit the /etc/swift/swift.conf  file 
+    template:
+      src: swift.conf-sample.j2
+      dest: /etc/swift/swift.conf
+      owner: root 
+      group: swift
+      mode: '0640'           
+  
+  - name: Edit the /etc/swift/proxy-server.conf file 
+    template:
+      src: proxy-server.conf.j2
+      dest: /etc/swift/proxy-server.conf
+      owner: root 
+      group: swift
+      mode: '0640'
+    
+      
+
+
+
+
+    
+
+

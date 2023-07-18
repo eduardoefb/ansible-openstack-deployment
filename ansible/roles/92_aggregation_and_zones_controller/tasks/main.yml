@@ -1,0 +1,73 @@
+---
+# tasks file for 92_aggregation_and_zones_controller
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+
+
+
+
+  - name: Cleanup 1
+    shell: |
+      source /root/admin-openrc
+      tmpf=`mktemp`
+      tmpg=`mktemp`
+      tmph=`mktemp`
+      tmpi=`mktemp`
+      openstack host list > ${tmpf} 2>/dev/null
+      openstack aggregate list > ${tmpg}
+      while read l; do
+      if [[ "${l}" == *"compute"*  ]]; then 
+          hname=`echo $l | awk '{print $2}'`
+          zone=`echo $l | awk '{print $6}'`    
+          agg=`grep ${zone} ${tmpg} | awk '{print $4}'`
+          echo ${zone}  >> ${tmph}
+          echo ${agg}  >> ${tmpi}
+          openstack aggregate remove host ${agg} ${hname}          
+      fi
+      done < ${tmpf}
+      rm ${tmpf}
+      rm ${tmpg}
+      rm ${tmph}
+      rm ${tmpi}
+    args:
+      executable: /bin/bash
+
+
+  - name: Cleanup 2
+    shell: |
+      source /root/admin-openrc
+      for ag in `openstack aggregate list -f value -c ID`; do openstack aggregate delete ${ag}; done
+    args:
+      executable: /bin/bash
+    
+
+  - name: Create aggregate
+    shell: |
+      source /root/admin-openrc
+      openstack aggregate create {{ item.aggregate }}  
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ nodes }}"
+
+  - name: Set zone
+    shell: |
+      source /root/admin-openrc
+      openstack aggregate set --zone {{ item.availability_zone }} {{ item.aggregate }}      
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ nodes }}"      
+
+  - name: Add host to zone
+    shell: |
+      source /root/admin-openrc
+      openstack aggregate add host {{ item.aggregate }} {{ item.name }}
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ nodes }}"       
+    when: "'compute' in item.roles"

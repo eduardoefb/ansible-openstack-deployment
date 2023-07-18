@@ -1,0 +1,17 @@
+
+- hosts: controller 
+  user: cloud
+  become: yes
+  gather_facts: false 
+  tasks:
+    - include_vars: "{{ playbook_dir }}/config/openstack/config.yml"  
+
+    - name: Get RC files
+      fetch:
+        src: "/root/{{ item }}"
+        dest: "{{ playbook_dir }}/{{ item }}"
+        flat: yes 
+      loop:
+        - admin-openrc
+        - demo-openrc
+        - rootCA.pem

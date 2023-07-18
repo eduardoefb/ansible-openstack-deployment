@@ -1,0 +1,95 @@
+[DEFAULT]
+{% for n in nodes %}
+{% if n.name == hname %}
+storage_availability_zone = {{ n.availability_zone }}
+{% endif %}
+{% endfor%}
+my_ip = {{ ansible_eth0.ipv4.address }}
+transport_url = rabbit://openstack:{{ RABBIT_PASS }}@{{ openstack.controller.name }}
+auth_strategy = keystone
+enabled_backends = lvm
+glance_api_servers = https://{{ openstack.controller.name }}:9292
+{% if ctrl == "1" %}
+{% for s in openstack.services %}
+{% if s.name == "cinder"%}
+osapi_volume_listen = {{ s.local_ip }}
+osapi_volume_listen_port = {{ s.local_port }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+[backend]
+
+[backend_defaults]
+
+[barbican]
+
+[brcd_fabric_example]
+
+[cisco_fabric_example]
+
+[coordination]
+
+[cors]
+
+[database]
+connection = mysql+pymysql://cinder:{{ CINDER_DBPASS }}@{{ openstack.controller.name }}/cinder
+
+[fc-zone-manager]
+
+[healthcheck]
+
+[key_manager]
+
+[keystone_authtoken]
+www_authenticate_uri = https://{{ openstack.controller.name }}:5000
+auth_url = https://{{ openstack.controller.name }}:5000
+memcached_servers = {{ openstack.controller.name }}:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = cinder
+password = {{ CINDER_PASS }}
+
+[nova]
+
+[oslo_concurrency]
+lock_path = /var/lib/cinder/tmp
+
+[oslo_messaging_amqp]
+
+[oslo_messaging_kafka]
+
+[oslo_messaging_notifications]
+
+[oslo_messaging_rabbit]
+
+[oslo_middleware]
+
+[oslo_policy]
+
+[oslo_reports]
+
+[oslo_versionedobjects]
+
+[privsep]
+
+[profiler]
+
+[sample_castellan_source]
+
+[sample_remote_file_source]
+
+[service_user]
+
+[ssl]
+
+[vault]
+
+[lvm]
+volume_driver = cinder.volume.drivers.lvm.LVMVolumeDriver
+volume_group = {{ openstack.cinder.volume_name }}
+target_protocol = iscsi
+target_helper = lioadm
+

@@ -1,0 +1,38 @@
+---
+# tasks file for 93_aggregation_and_zones_storage
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Check if node is also controller
+    shell: |
+      is_controller=0
+      if grep "connection = mysql+pymysql://nova:{{ NOVA_DBPASS }}@{{ openstack.controller.name }}/nova_api" /etc/nova/nova.conf >/dev/null 2>&1 ; then 
+        is_controller=1      
+      fi
+      echo ${is_controller}
+    register: is_controller
+    args:
+      executable: /bin/bash
+
+  - name: Get hostname
+    shell: hostname
+    register: ansible_hostname
+
+  - name: Edit the /etc/cinder/cinder.conf file 
+    template:
+      src: cinder.conf.j2
+      dest: /etc/cinder/cinder.conf      
+      owner: root 
+      group: cinder
+      mode: '0640'
+    vars:
+      ctrl: "{{ is_controller.stdout }}" 
+      hname: "{{ ansible_hostname.stdout }}"
+
+  - name: Restart cinder
+    systemd:
+      name: cinder-volume.service
+      state: restarted
+      enabled: yes
+  

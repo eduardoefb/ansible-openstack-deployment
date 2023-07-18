@@ -1,0 +1,21 @@
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 91_projects_and_users
+
+  - hosts: localhost
+    tasks:
+      - include_vars: "{{ playbook_dir }}/config.yml"    
+      - include_vars: "{{ playbook_dir }}/users.yml"    
+      - name: Create rc file
+        template:
+          src: "templates/userrc.j2"
+          dest: "{{ playbook_dir }}/{{ item.name }}-rc"
+        vars:
+          username: "{{ item.name }}"
+          project: "{{ item.project }}"
+          domain: "{{ item.domain }}"
+          password: "{{ item.password }}"
+        loop:
+          "{{ users }}"

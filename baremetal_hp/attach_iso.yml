@@ -1,0 +1,13 @@
+- hosts: localhost
+  tasks: 
+    #- include_vars: "{{ playbook_dir }}/config.yml"  
+  
+    - name: Task to boot a system using an ISO from an HP iLO interface only if the system is an HP server
+      community.general.hpilo_boot:
+        host: "10.2.1.50"
+        login: eduabati
+        password: Mirunda12#
+        media: cdrom
+        image: "http://10.2.1.32:9000/srv01.iso"
+      delegate_to: localhost
+

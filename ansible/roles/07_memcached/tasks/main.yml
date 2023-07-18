@@ -1,0 +1,62 @@
+---
+# tasks file
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+
+  - name: Uninstalling the packages
+    apt:
+      name: "{{ packages }}"
+      state: absent
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+    vars:
+      packages:
+        - memcached
+        - python3-memcache
+
+  - name: Remove dependencies that are no longer required
+    apt:
+      autoremove: yes
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success                  
+
+  - name: Installing the packages
+    apt:
+      name: "{{ packages }}"
+      state: latest
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+    vars:
+      packages:
+        - memcached
+        - python3-memcache
+  
+  - name: Edit the /etc/sysconfig/memcached 
+    template:
+      src: memcached.j2
+      dest: /etc/memcached.conf 
+      owner: root 
+      group: root
+      mode: '0640'
+  
+  - name: Start memcached service
+    systemd:
+      name: memcached.service
+      state: restarted
+      enabled: yes
+
+
+
+
+
+    
+
+

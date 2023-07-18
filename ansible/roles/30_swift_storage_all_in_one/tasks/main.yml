@@ -1,0 +1,20 @@
+---
+# tasks file
+# https://docs.openstack.org/swift/wallaby/install/storage-install-ubuntu-debian.html
+
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  # Workaround for all-in-one, to avoid "Exception: Could not bind to 0.0.0.0:8080 after trying for 30 seconds"
+  
+  - name: On the storage nodes, start the Object Storage services
+    shell: |
+      systemctl stop swift-proxy.service
+      swift-init all start
+      systemctl start swift-proxy.service
+      swift-init all start
+    
+    
+

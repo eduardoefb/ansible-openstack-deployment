@@ -1,0 +1,92 @@
+---
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "{{ playbook_dir }}/users.yml"
+  - include_vars: "main.yml"
+
+  - name: Create projects
+    shell: |
+      source /root/admin-openrc      
+      if ! openstack project list -c Name | grep --color -P "\|\s+{{ item.name }}\s+\|"; then
+        openstack project create --domain {{ item.domain }} --description "{{ item.description }}" {{ item.name }}
+      fi            
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ projects }}"
+
+  - name: Modify quotas
+    shell: |
+      source /root/admin-openrc
+      openstack quota set \
+        --cores {{ item.quota.cores }} \
+        --fixed-ips {{ item.quota.fixed_ips }} \
+        --injected-file-size {{ item.quota.injected_file_size }} \
+        --injected-path-size {{ item.quota.injected_path_size }} \
+        --instances {{ item.quota.instances }} \
+        --key-pairs {{ item.quota.key_pairs }} \
+        --ram {{ item.quota.ram }} \
+        --server-groups {{ item.quota.server_groups }} \
+        --server-group-members {{ item.quota.server_group_members }} \
+        --gigabytes {{ item.quota.gigabytes }} \
+        --per-volume-gigabytes {{ item.quota.per_volume_gigabytes }} \
+        --volumes {{ item.quota.volumes }} \
+        --floating-ips {{ item.quota.floating_ips }} \
+        --secgroup-rules {{ item.quota.secgroup_rules }} \
+        --secgroups {{ item.quota.secgroups }} \
+        --networks {{ item.quota.networks }} \
+        --subnets {{ item.quota.subnets }} \
+        --ports {{ item.quota.ports }} \
+        --routers {{ item.quota.routers }} \
+        {{ item.name }}            
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ projects }}" 
+
+  - name: Create Users
+    shell: |
+      source /root/admin-openrc      
+      if ! openstack user list -c Name | grep --color -P "\|\s+{{ item.name }}\s+\|"; then
+        openstack user create --domain {{ item.domain }} --password {{ item.password }} {{ item.name }}
+      fi            
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ users }}"           
+
+  - name: Modify role
+    shell: |
+      source /root/admin-openrc      
+      openstack role add --project {{ item.project }} --user {{ item.name }} {{ item.role }}         
+    args:
+      executable: /bin/bash
+    loop:
+      "{{ users }}"   
+
+  - name: Modify quotas for service project
+    shell: |
+      source /root/admin-openrc
+      openstack quota set \
+        --cores -1 \
+        --fixed-ips -1 \
+        --injected-file-size -1 \
+        --injected-path-size -1 \
+        --instances -1 \
+        --key-pairs -1 \
+        --ram -1 \
+        --server-groups -1 \
+        --server-group-members -1 \
+        --gigabytes -1 \
+        --per-volume-gigabytes 1 \
+        --volumes -1 \
+        --floating-ips -1 \
+        --secgroup-rules -1 \
+        --secgroups -1 \
+        --networks -1 \
+        --subnets -1 \
+        --ports -1 \
+        --routers -1 \
+        service            
+    args:
+      executable: /bin/bash

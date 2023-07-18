@@ -1,0 +1,143 @@
+
+- hosts: localhost
+  tasks: 
+    - include_vars: "{{ playbook_dir }}/config.yml"  
+  
+    - name: Wait 
+      pause:
+        minutes: 1
+
+    - name: Wait for installation to start
+      wait_for: 
+        host: "{{ item }}"
+        port: 22
+        timeout: 72000
+      loop:
+        "{{ nodes }}"
+
+    - name: Wait 
+      pause:
+        minutes: 1
+
+    - name: Wait for installation to complete
+      wait_for: 
+        host: "{{ item }}"
+        port: 22
+        timeout: 72000
+        state: stopped
+      loop:
+        "{{ nodes }}"   
+
+    - name: Wait for servers to reboot
+      wait_for: 
+        host: "{{ item }}"
+        port: 22
+        timeout: 72000
+      loop:
+        "{{ nodes }}"   
+
+    - name: Remove node from known hosts
+      shell: |
+        sed -i '/{{ item }}/d' ${HOME}/.ssh/known_hosts  
+      loop:
+        "{{ nodes }}"                  
+    
+- hosts: localhost
+  become: yes
+  tasks:
+    - name: Allow routing
+      shell: |
+        iptables -t nat -F
+        iptables -t nat -A POSTROUTING -o eno1 -j MASQUERADE
+        echo 1 >  /proc/sys/net/ipv4/ip_forward      
+
+- hosts: nodes 
+  user: cloud
+  become: yes
+  gather_facts: false 
+  tasks:
+    - include_vars: "{{ playbook_dir }}/config.yml"  
+
+    - name: Create .ssh directory
+      file:
+        path: /home/cloud/.ssh
+        state: directory
+        owner: cloud
+        group: cloud
+        mode: "0700"
+      
+    - name: Copy authorized_keys file
+      copy:
+        src: "{{ key_file }}"
+        dest: /home/cloud/.ssh/authorized_keys        
+        owner: cloud
+        group: cloud
+        mode: "0600"
+        
+    - name: Add cloud user to sudoers
+      lineinfile:
+        path: /etc/sudoers
+        line: "cloud ALL=(ALL:ALL) NOPASSWD:ALL"
+        validate: "/usr/sbin/visudo -cf %s"
+        state: present
+        create: yes  
+
+    - name: Configure netplan
+      shell: |
+        sed -i 's|- 0.0.0.0|- 1.1.1.1|g' /etc/netplan/00-installer-config.yaml    
+        netplan apply
+      
+    - name: Update Cache     
+      apt:
+        update_cache: yes
+      register: apt_res
+      retries: 300
+      delay: 10
+      until: apt_res is success   
+              
+    - name: Update System    
+      apt:
+        name: '*'
+        state: 'latest'
+      register: apt_res
+      retries: 300
+      delay: 10
+      until: apt_res is success   
+              
+    - name: Install required packages
+      apt:
+        pkg:
+          - ifupdown
+          - net-tools
+          - ipcalc
+        update_cache: yes
+      register: apt_res
+      retries: 300
+      delay: 10
+      until: apt_res is success  
+
+    - name: Copy script
+      copy:
+        src: scripts/netplan.sh
+        dest: /root/netplan.sh
+
+    - name: Exec script
+      shell:  bash /root/netplan.sh
+
+    - name: Delete script
+      file:
+        path: /root/netplan.sh    
+        state: absent
+    
+    - name: Disable password authentication
+      shell: echo "PasswordAuthentication no" > /etc/ssh/sshd_config.d/50-cloud-init.conf
+
+    - name: Change passwod
+      shell: |
+        usermod -p '{{ new_password }}' cloud     
+
+    - name: Reboot
+      reboot:
+        msg: Reboot
+        reboot_timeout: 3600
+      

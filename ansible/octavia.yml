@@ -1,0 +1,7 @@
+
+# Octavia - controller
+  - hosts: controller
+    user: cloud
+    become: true
+    roles:     
+      - role: 33_octavia   

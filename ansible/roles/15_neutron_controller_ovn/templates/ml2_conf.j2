@@ -1,0 +1,45 @@
+
+[DEFAULT]
+debug = false
+
+[ml2]
+type_drivers = local,flat,vlan,geneve
+tenant_network_types = geneve
+mechanism_drivers = ovn
+extension_drivers = port_security
+overlay_ip_version = 4
+
+[ml2_type_geneve]
+vni_ranges = 1:65536
+#vni_ranges = 1:4094
+max_header_size = 38
+
+[ml2_type_flat]
+{% for l in openstack.provider_networks %}
+{% if loop.first%}
+flat_networks = {{ l.name }}
+{%- else %}
+, {{ l.name }}
+{%- endif %}
+{%- endfor %}
+
+
+[ml2_type_vlan]
+{% for l in openstack.provider_networks %}
+{% if loop.first%}
+
+network_vlan_ranges = {{ l.name }}:{{ l.vlans }}
+{%- else %}
+, {{ l.name }}:{{ l.vlans }}
+{%- endif %}
+{%- endfor %}
+
+[securitygroup]
+enable_security_group = True
+firewall_driver = neutron.agent.linux.iptables_firewall.OVSHybridIptablesFirewallDriver
+
+[ovn]
+ovn_nb_connection = tcp:{{ openstack.controller.ip }}:6641
+ovn_sb_connection = tcp:{{ openstack.controller.ip }}:6642
+ovn_l3_scheduler = leastloaded
+ovn_metadata_enabled = True

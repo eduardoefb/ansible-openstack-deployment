@@ -1,0 +1,217 @@
+---
+# tasks file
+# https://docs.openstack.org/install-guide/openstack-services.html
+# https://docs.openstack.org/neutron/train/install/controller-install-rdo.html
+# https://docs.openstack.org/train/install/
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: Create database and user
+    shell: |
+      mysql -u root -p{{ ROOT_DBPASS }} -e "DROP DATABASE neutron;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "CREATE DATABASE neutron;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'localhost' IDENTIFIED BY '{{ NEUTRON_DBPASS }}';"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'%' IDENTIFIED BY '{{ NEUTRON_DBPASS }}';"
+  
+  - name: Cleanup
+    shell: |
+      source /root/admin-openrc
+      for i in `openstack user list  -f value -c Name -c ID | grep neutron$ | awk '{print $1}'`; do
+         openstack user delete ${i}
+      done  
+      for i in `openstack service list -f value -c Name -c ID | grep neutron$ | awk '{print $1}'`; do 
+        openstack service delete ${i}
+      done
+    args:
+      executable: /bin/bash  
+
+  - name: Create user
+    shell: |
+      source /root/admin-openrc
+      openstack user create --domain default --password {{ NEUTRON_PASS }} neutron   
+    args:
+      executable: /bin/bash  
+    
+  - name: Add the admin role to the neutron user
+    shell: |
+      source /root/admin-openrc
+      openstack role add --project service --user neutron admin
+    args:
+      executable: /bin/bash      
+  
+  - name: Create the neutron service entity
+    shell: |
+      source /root/admin-openrc
+      openstack service create --name neutron --description "OpenStack Networking" network
+      openstack endpoint create --region RegionOne network public https://{{ openstack.controller.name }}:{{ item.remote_port }}
+      openstack endpoint create --region RegionOne network internal https://{{ openstack.controller.name }}:{{ item.remote_port }}
+      openstack endpoint create --region RegionOne network admin https://{{ openstack.controller.name }}:{{ item.remote_port }}     
+    args:
+      executable: /bin/bash    
+    loop:
+      "{{ openstack.services }}"
+    when:
+      - item.name == "neutron"         
+
+  - name: Installing the packages
+    apt:
+      pkg:
+        #- neutron-dhcp-agent
+        #- neutron-l3-agent
+        #- neutron-metadata-agent  
+        - neutron-ovn-metadata-agent 
+        - neutron-server 
+        - openvswitch-switch 
+        - ovn-central 
+        - ovn-host 
+        - python3-neutronclient    
+
+    register: apt_res
+    retries: 300
+    delay: 10
+    until: apt_res is success      
+     
+  - name: Configure neutron_sudoers file
+    template:
+      src: neutron_sudoers.j2
+      dest: /etc/sudoers.d/neutron_sudoers
+      owner: root
+      mode: '0440'
+
+  - name: Edit the /etc/neutron/neutron.conf file 
+    template:
+      src: neutron.conf.j2
+      dest: /etc/neutron/neutron.conf
+      owner: root 
+      group: neutron
+      mode: '0640'
+
+  - name: Edit the /etc/neutron/plugins/ml2/ml2_conf.ini
+    template:
+      src: ml2_conf.j2
+      dest: /etc/neutron/plugins/ml2/ml2_conf.ini
+      owner: root 
+      group: neutron
+      mode: '0640'
+
+  - name: Configure the metadata agent
+    template:
+      src: metadata_agent.ini.j2   
+      dest: /etc/neutron/metadata_agent.ini
+      owner: root 
+      group: neutron
+      mode: '0640'         
+
+  - name: Edit the /etc/neutron/dhcp_agent.ini
+    template:
+      src: dhcp_agent.ini.j2   
+      dest: /etc/neutron/dhcp_agent.ini
+      owner: root 
+      group: neutron
+      mode: '0640'    
+
+  - name: Edit the /etc/neutron/neutron_ovn_metadata_agent.ini
+    template:
+      src: neutron_ovn_metadata_agent.ini.j2
+      dest: /etc/neutron/neutron_ovn_metadata_agent.ini
+      owner: root 
+      group: neutron
+      mode: '0640'    
+
+  - name: Edit the /etc/default/openvswitch-switch 
+    template:
+      src: openvswitch-switch.j2
+      dest: /etc/default/openvswitch-switch 
+      owner: root 
+      group: neutron
+      mode: '0640'         
+  
+
+  - name: Edit the /etc/neutron/l3_agent.ini
+    template:
+      src: l3_agent.ini.j2
+      dest: /etc/neutron/l3_agent.ini
+      owner: root 
+      group: neutron
+      mode: '0640'        
+
+  - name: Edit the /etc/nova/nova.conf
+    template:
+      src: nova.conf.j2
+      dest: /etc/nova/nova.conf
+      owner: root 
+      group: nova
+      mode: '0640'      
+    vars:
+      local_port: "{{ item.local_port }}"
+      local_ip: "{{ item.local_ip }}"
+      remote_port: "{{ item.remote_port }}"
+    loop:
+      "{{ openstack.services }}"
+    when:
+      - item.name == "nova"  
+
+  - name: Disable constraint 
+    shell: |
+      mysql -u root -p{{ ROOT_DBPASS }} -e "SET GLOBAL check_constraint_checks=0;"
+      mysql -u root -p{{ ROOT_DBPASS }} -e "SET check_constraint_checks=0;"         
+      
+  - name: Populate the database
+    shell: |
+      ln -s /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugin.ini 
+      su -s /bin/sh -c "neutron-db-manage --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugin.ini upgrade head" neutron    
+    args:
+      executable: /bin/bash
+          
+  - name: Start the Networking services and configure them to start when the system boots
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+    loop:
+      - neutron-server.service
+      - neutron-ovn-metadata-agent.service
+      - nova-api.service
+      - ovn-central.service
+      - ovn-northd.service
+      - ovn-controller.service
+      - ovn-host.service      
+
+  - name: Wait 
+    pause:
+      seconds: 5
+  
+  - name: Start the Networking services and configure them to start when the system boots
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: restarted
+    loop:
+      - ovn-central.service
+      - ovn-host.service
+       
+  - name: Wait 
+    pause:
+      seconds: 5
+  
+  - name: Configure ovn (Controller)
+    shell: |
+      ovn-nbctl set-connection ptcp:6641:{{ openstack.controller.ip }} -- set connection . inactivity_probe=60000 
+      ovn-sbctl set-connection ptcp:6642:{{ openstack.controller.ip }} -- set connection . inactivity_probe=60000 
+      ovs-vsctl set open . external-ids:ovn-remote=tcp:{{ openstack.controller.ip }}:6642 
+      # ovs-vsctl set open . external-ids:ovn-encap-type=geneve,vxlan
+      ovs-vsctl set open . external-ids:ovn-encap-type=geneve
+      ovs-vsctl set open . external-ids:ovn-encap-ip={{ openstack.controller.ip }}
+
+    args:
+      executable: /bin/bash        
+
+
+
+
+
+    
+
+

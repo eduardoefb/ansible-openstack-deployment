@@ -1,0 +1,23 @@
+---
+# tasks file
+# https://docs.openstack.org/swift/wallaby/install/storage-install-ubuntu-debian.html
+
+
+  - include_vars: "{{ playbook_dir }}/config.yml"
+  - include_vars: "{{ playbook_dir }}/passwords.yml"
+  - include_vars: "main.yml"
+
+  - name: On the storage nodes, start the Object Storage services
+    shell: |
+      if grep "connection = mysql+pymysql://nova:{{ NOVA_DBPASS }}@{{ openstack.controller.name }}/nova_api" /etc/nova/nova.conf >/dev/null 2>&1 ; then 
+        systemctl stop swift-proxy.service
+        swift-init all start
+        systemctl start swift-proxy.service
+      fi
+      swift-init all start
+
+  #- name: On the storage nodes, start the Object Storage services
+  #  shell: |
+  #    swift-init all start     
+      
+

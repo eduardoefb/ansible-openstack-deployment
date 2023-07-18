@@ -1,0 +1,8 @@
+[DEFAULT]
+compute_driver=libvirt.LibvirtDriver
+[libvirt]
+{% if kvm == "0" %}
+virt_type=qemu
+{% else %}
+virt_type=kvm
+{% endif %}
